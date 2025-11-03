@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,6 +8,7 @@ const corsHeaders = {
 
 const GEMINI_API_KEY = "AIzaSyCOrg93335CIrVlZIL8KEEL1O0SFM1rvp4";
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+const GEMINI_IMAGE_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent";
 
 const SYSTEM_PROMPT = `أنت "ستايل-نيكسوس" (Style-Nexus)، مستشار موضة شخصي آلي وخبير في الأزياء والملابس والمظهر. مهمتك هي تحليل طلبات المستخدمين (الأفراد الباحثين عن نصائح الستايل) وتقديم توصيات شاملة ومفصلة. يجب أن تكون جميع الردود ذات صلة بالموضة الحديثة، عملية، ومحايدة.
 
@@ -46,9 +48,13 @@ serve(async (req) => {
   }
 
   try {
-    const { imageUrl, occasion, gender } = await req.json();
+    const { imageUrl, occasion, gender, userId, analysisId } = await req.json();
 
     console.log("Analyzing style for:", { imageUrl, occasion, gender });
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Fetch the image and convert to base64
     const imageResponse = await fetch(imageUrl);
@@ -142,7 +148,80 @@ serve(async (req) => {
       };
     }
 
-    return new Response(JSON.stringify(analysisResult), {
+    // Generate visualization image based on recommendations
+    console.log("Generating visualization image...");
+    
+    const imagePrompt = `Create a professional fashion styling visualization showing:
+- Hairstyles: ${analysisResult.توصيات_تسريحات_الشعر.map((h: any) => h.التسريحة).join(", ")}
+- Outfit pieces: ${analysisResult.توصيات_الملابس_والأطقم.map((o: any) => `${o.القطعة} in ${o.اللون}`).join(", ")}
+- Style: ${analysisResult.الأسلوب_والتنسيق_المقترح}
+- Occasion: ${occasionLabels[occasion] || occasion}
+- Gender: ${genderLabels[gender] || gender}
+
+Create a stylish, modern fashion mood board or illustration that represents these recommendations.`;
+
+    const imageGenResponse = await fetch(`${GEMINI_IMAGE_API_URL}?key=${GEMINI_API_KEY}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: imagePrompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 1,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 8192,
+          responseMimeType: "image/jpeg"
+        }
+      }),
+    });
+
+    let generatedImageUrl = null;
+
+    if (imageGenResponse.ok) {
+      const imageData = await imageGenResponse.json();
+      console.log("Image generation response received");
+      
+      // Extract base64 image from response
+      const base64Image = imageData.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      
+      if (base64Image) {
+        // Convert base64 to blob
+        const imageBuffer = Uint8Array.from(atob(base64Image), c => c.charCodeAt(0));
+        
+        // Upload to Supabase storage
+        const fileName = `${analysisId}-generated-${Date.now()}.jpg`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('analysis-images')
+          .upload(fileName, imageBuffer, {
+            contentType: 'image/jpeg',
+            upsert: false
+          });
+
+        if (!uploadError && uploadData) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('analysis-images')
+            .getPublicUrl(fileName);
+          
+          generatedImageUrl = publicUrl;
+          console.log("Generated image uploaded successfully:", generatedImageUrl);
+        } else {
+          console.error("Error uploading generated image:", uploadError);
+        }
+      }
+    } else {
+      console.error("Image generation failed:", await imageGenResponse.text());
+    }
+
+    return new Response(JSON.stringify({
+      ...analysisResult,
+      generated_image_url: generatedImageUrl
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {

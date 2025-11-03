@@ -63,7 +63,22 @@ const Analyze = () => {
         .from("analysis-images")
         .getPublicUrl(fileName);
 
-      // Call analysis edge function
+      // Create analysis record first to get ID
+      const { data: analysisRecord, error: dbError } = await supabase
+        .from("style_analyses")
+        .insert({
+          user_id: user.id,
+          image_url: publicUrl,
+          occasion,
+          gender,
+          analysis_result: {},
+        })
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+
+      // Call analysis edge function with analysis ID
       const { data: functionData, error: functionError } = await supabase.functions.invoke(
         "analyze-style",
         {
@@ -71,29 +86,26 @@ const Analyze = () => {
             imageUrl: publicUrl,
             occasion,
             gender,
+            userId: user.id,
+            analysisId: analysisRecord.id,
           },
         }
       );
 
       if (functionError) throw functionError;
 
-      // Save analysis to database
-      const { data: analysisData, error: dbError } = await supabase
+      // Update analysis with results and generated image
+      const { error: updateError } = await supabase
         .from("style_analyses")
-        .insert({
-          user_id: user.id,
-          image_url: publicUrl,
-          occasion,
-          gender,
+        .update({ 
           analysis_result: functionData,
         })
-        .select()
-        .single();
+        .eq("id", analysisRecord.id);
 
-      if (dbError) throw dbError;
+      if (updateError) throw updateError;
 
       toast.success("تم التحليل بنجاح!");
-      navigate(`/results/${analysisData.id}`);
+      navigate(`/results/${analysisRecord.id}`);
     } catch (error: any) {
       console.error("Analysis error:", error);
       toast.error(error.message || "حدث خطأ في التحليل");

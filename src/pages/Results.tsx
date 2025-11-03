@@ -124,14 +124,28 @@ const Results = () => {
             </Button>
           </div>
 
-          {/* Image */}
-          <Card className="p-6 mb-8 shadow-elegant">
-            <img
-              src={analysis.image_url}
-              alt="Analysis"
-              className="w-full max-h-96 object-contain rounded-lg"
-            />
-          </Card>
+          {/* Images */}
+          <div className="grid md:grid-cols-2 gap-6 mb-8">
+            <Card className="p-6 shadow-elegant">
+              <h3 className="text-lg font-bold mb-4 text-center">صورتك</h3>
+              <img
+                src={analysis.image_url}
+                alt="Your Photo"
+                className="w-full max-h-80 object-contain rounded-lg"
+              />
+            </Card>
+            
+            {analysis.generated_image_url && (
+              <Card className="p-6 shadow-elegant gradient-card-bg">
+                <h3 className="text-lg font-bold mb-4 text-center gradient-text">التصميم المقترح</h3>
+                <img
+                  src={analysis.generated_image_url}
+                  alt="Generated Style"
+                  className="w-full max-h-80 object-contain rounded-lg"
+                />
+              </Card>
+            )}
+          </div>
 
           {/* Analysis Summary */}
           <Card className="p-8 mb-8 shadow-elegant gradient-card-bg">
