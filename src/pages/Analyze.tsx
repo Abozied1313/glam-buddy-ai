@@ -99,6 +99,7 @@ const Analyze = () => {
         .from("style_analyses")
         .update({ 
           analysis_result: functionData,
+          generated_image_url: functionData.generated_image_url,
         })
         .eq("id", analysisRecord.id);
 
