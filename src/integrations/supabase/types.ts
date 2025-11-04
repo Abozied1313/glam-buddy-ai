@@ -75,6 +75,7 @@ export type Database = {
           analysis_result: Json | null
           created_at: string
           gender: string
+          generated_image_url: string | null
           id: string
           image_url: string
           occasion: string
@@ -85,6 +86,7 @@ export type Database = {
           analysis_result?: Json | null
           created_at?: string
           gender: string
+          generated_image_url?: string | null
           id?: string
           image_url: string
           occasion: string
@@ -95,6 +97,7 @@ export type Database = {
           analysis_result?: Json | null
           created_at?: string
           gender?: string
+          generated_image_url?: string | null
           id?: string
           image_url?: string
           occasion?: string
