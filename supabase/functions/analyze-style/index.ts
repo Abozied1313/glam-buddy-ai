@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const GEMINI_API_KEY = "AIzaSyCOrg93335CIrVlZIL8KEEL1O0SFM1rvp4";
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
-const GEMINI_IMAGE_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent";
+const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
 const SYSTEM_PROMPT = `أنت "ستايل-نيكسوس" (Style-Nexus)، مستشار موضة شخصي آلي وخبير في الأزياء والملابس والمظهر. مهمتك هي تحليل طلبات المستخدمين (الأفراد الباحثين عن نصائح الستايل) وتقديم توصيات شاملة ومفصلة. يجب أن تكون جميع الردود ذات صلة بالموضة الحديثة، عملية، ومحايدة.
 
@@ -157,7 +157,7 @@ serve(async (req) => {
       };
     }
 
-    // Generate visualization image based on recommendations
+    // Generate visualization image based on recommendations using Lovable AI
     console.log("Generating visualization image...");
     
     const imagePrompt = `Create a professional fashion styling visualization showing:
@@ -167,64 +167,69 @@ serve(async (req) => {
 - Occasion: ${occasionLabels[occasion] || occasion}
 - Gender: ${genderLabels[gender] || gender}
 
-Create a stylish, modern fashion mood board or illustration that represents these recommendations.`;
+Create a stylish, modern fashion mood board or illustration that represents these recommendations. Do NOT replicate the original photo.`;
 
-    const imageGenResponse = await fetch(`${GEMINI_IMAGE_API_URL}?key=${GEMINI_API_KEY}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: imagePrompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 1,
-          topP: 0.95,
-          topK: 40,
-          maxOutputTokens: 8192,
-          responseMimeType: "image/jpeg"
-        }
-      }),
-    });
-
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     let generatedImageUrl = null;
 
-    if (imageGenResponse.ok) {
-      const imageData = await imageGenResponse.json();
-      console.log("Image generation response received");
-      
-      // Extract base64 image from response
-      const base64Image = imageData.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      
-      if (base64Image) {
-        // Convert base64 to blob
-        const imageBuffer = Uint8Array.from(atob(base64Image), c => c.charCodeAt(0));
-        
-        // Upload to Supabase storage
-        const fileName = `${analysisId}-generated-${Date.now()}.jpg`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('analysis-images')
-          .upload(fileName, imageBuffer, {
-            contentType: 'image/jpeg',
-            upsert: false
-          });
+    if (LOVABLE_API_KEY) {
+      try {
+        const imageGenResponse = await fetch(LOVABLE_AI_URL, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash-image-preview",
+            messages: [{
+              role: "user",
+              content: imagePrompt
+            }],
+            modalities: ["image", "text"]
+          }),
+        });
 
-        if (!uploadError && uploadData) {
-          const { data: { publicUrl } } = supabase.storage
-            .from('analysis-images')
-            .getPublicUrl(fileName);
+        if (imageGenResponse.ok) {
+          const imageData = await imageGenResponse.json();
+          console.log("Image generation response received");
           
-          generatedImageUrl = publicUrl;
-          console.log("Generated image uploaded successfully:", generatedImageUrl);
+          // Extract base64 image from Lovable AI response
+          const base64DataUrl = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+          
+          if (base64DataUrl && base64DataUrl.startsWith('data:image')) {
+            // Extract base64 data from data URL
+            const base64Data = base64DataUrl.split(',')[1];
+            const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+            
+            // Upload to Supabase storage
+            const fileName = `${analysisId}-generated-${Date.now()}.jpg`;
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('analysis-images')
+              .upload(fileName, imageBuffer, {
+                contentType: 'image/jpeg',
+                upsert: false
+              });
+
+            if (!uploadError && uploadData) {
+              const { data: { publicUrl } } = supabase.storage
+                .from('analysis-images')
+                .getPublicUrl(fileName);
+              
+              generatedImageUrl = publicUrl;
+              console.log("Generated image uploaded successfully:", generatedImageUrl);
+            } else {
+              console.error("Error uploading generated image:", uploadError);
+            }
+          }
         } else {
-          console.error("Error uploading generated image:", uploadError);
+          console.error("Image generation failed:", imageGenResponse.status, await imageGenResponse.text());
         }
+      } catch (imageGenError) {
+        console.error("Image generation error:", imageGenError);
       }
     } else {
-      console.error("Image generation failed:", await imageGenResponse.text());
+      console.log("LOVABLE_API_KEY not configured, skipping image generation");
     }
 
     return new Response(JSON.stringify({
