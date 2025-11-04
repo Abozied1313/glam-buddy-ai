@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Sparkles, Loader2 } from "lucide-react";
+import { Upload, Sparkles, Loader2, Camera } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
@@ -126,36 +126,68 @@ const Analyze = () => {
             </div>
 
             <div className="space-y-6">
-              {/* Image Upload */}
+              {/* Image Upload/Capture */}
               <div className="space-y-2">
                 <Label>الصورة</Label>
-                <div
-                  className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary transition-colors"
-                  onClick={() => document.getElementById("image-upload")?.click()}
-                >
-                  {preview ? (
+                
+                {preview ? (
+                  <div className="border-2 border-border rounded-lg p-4">
                     <img
                       src={preview}
                       alt="Preview"
-                      className="max-h-64 mx-auto rounded-lg"
+                      className="max-h-64 mx-auto rounded-lg mb-4"
                     />
-                  ) : (
-                    <div className="space-y-4">
-                      <Upload className="w-12 h-12 mx-auto text-muted-foreground" />
-                      <div>
-                        <p className="font-medium">اضغط لرفع صورة</p>
-                        <p className="text-sm text-muted-foreground">PNG, JPG حتى 10MB</p>
-                      </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => {
+                        setImage(null);
+                        setPreview("");
+                      }}
+                    >
+                      إزالة الصورة
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Upload from Gallery */}
+                    <div
+                      className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary transition-colors"
+                      onClick={() => document.getElementById("image-upload")?.click()}
+                    >
+                      <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-2" />
+                      <p className="font-medium text-sm">رفع من المعرض</p>
+                      <p className="text-xs text-muted-foreground mt-1">اختر صورة موجودة</p>
                     </div>
-                  )}
-                  <input
-                    id="image-upload"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    className="hidden"
-                  />
-                </div>
+                    
+                    {/* Capture from Camera */}
+                    <div
+                      className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary transition-colors"
+                      onClick={() => document.getElementById("camera-capture")?.click()}
+                    >
+                      <Camera className="w-10 h-10 mx-auto text-muted-foreground mb-2" />
+                      <p className="font-medium text-sm">التقط صورة</p>
+                      <p className="text-xs text-muted-foreground mt-1">استخدم الكاميرا</p>
+                    </div>
+                  </div>
+                )}
+                
+                <input
+                  id="image-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="hidden"
+                />
+                <input
+                  id="camera-capture"
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleImageChange}
+                  className="hidden"
+                />
               </div>
 
               {/* Gender Selection */}
