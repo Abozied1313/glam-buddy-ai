@@ -160,14 +160,34 @@ serve(async (req) => {
     // Generate visualization image based on recommendations using Lovable AI
     console.log("Generating visualization image...");
     
-    const imagePrompt = `Create a professional fashion styling visualization showing:
-- Hairstyles: ${analysisResult.توصيات_تسريحات_الشعر.map((h: any) => h.التسريحة).join(", ")}
-- Outfit pieces: ${analysisResult.توصيات_الملابس_والأطقم.map((o: any) => `${o.القطعة} in ${o.اللون}`).join(", ")}
-- Style: ${analysisResult.الأسلوب_والتنسيق_المقترح}
-- Occasion: ${occasionLabels[occasion] || occasion}
-- Gender: ${genderLabels[gender] || gender}
+    // Build detailed outfit description from recommendations
+    const outfitDetails = analysisResult.توصيات_الملابس_والأطقم.map((item: any) => 
+      `${item.القطعة} (${item.اللون}, ${item.الخامة})`
+    ).join(", ");
+    
+    const hairstyleDetails = analysisResult.توصيات_تسريحات_الشعر[0]?.التسريحة || "تسريحة عصرية";
+    
+    const imagePrompt = `Generate a high-quality, realistic photo of a ${gender === 'male' ? 'handsome man' : 'beautiful woman'} wearing the following complete outfit:
 
-Create a stylish, modern fashion mood board or illustration that represents these recommendations. Do NOT replicate the original photo.`;
+${outfitDetails}
+
+The person should have this hairstyle: ${hairstyleDetails}
+
+Setting: ${occasion === 'sport' ? 'modern gym or outdoor sports environment' : 
+           occasion === 'formal' ? 'elegant formal setting' : 
+           occasion === 'work' ? 'professional office environment' :
+           occasion === 'wedding' ? 'luxurious wedding venue' :
+           occasion === 'party' ? 'stylish party venue' :
+           'casual modern setting'}
+
+IMPORTANT: 
+- Create a completely NEW photo showing someone wearing the recommended outfit
+- DO NOT copy or replicate any existing photo
+- Show the full outfit clearly from head to toe
+- Make it look like a professional fashion photograph
+- The person should look confident and stylish
+- Ensure all clothing pieces mentioned are visible in the image`;
+
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     let generatedImageUrl = null;
