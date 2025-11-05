@@ -47,7 +47,7 @@ const Home = () => {
             backgroundPosition: "center",
           }}
         >
-          <div className="absolute inset-0 bg-gradient-to-b from-background/95 via-background/80 to-background/95" />
+          <div className="absolute inset-0 bg-gradient-to-b from-background/50 via-background/40 to-background/60" />
         </div>
         
         <div className="container mx-auto px-4 relative z-10 text-center">
@@ -98,14 +98,14 @@ const Home = () => {
       {/* Features Section */}
       <section id="features" className="relative py-20">
         <div
-          className="absolute inset-0 z-0 opacity-10"
+          className="absolute inset-0 z-0 opacity-40"
           style={{
             backgroundImage: `url(${bg2})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
         />
-        <div className="absolute inset-0 bg-background/90 z-0" />
+        <div className="absolute inset-0 bg-background/70 z-0" />
         
         <div className="container mx-auto px-4 relative z-10">
           <div className="text-center mb-16 animate-slide-up">
@@ -138,14 +138,14 @@ const Home = () => {
       {/* How It Works */}
       <section className="relative py-20">
         <div
-          className="absolute inset-0 z-0 opacity-10"
+          className="absolute inset-0 z-0 opacity-40"
           style={{
             backgroundImage: `url(${bg4})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
         />
-        <div className="absolute inset-0 bg-background/90 z-0" />
+        <div className="absolute inset-0 bg-background/70 z-0" />
         
         <div className="container mx-auto px-4 relative z-10">
           <div className="text-center mb-16">
