@@ -3,7 +3,11 @@ import { Card } from "@/components/ui/card";
 import { Sparkles, Camera, Heart, Wand2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Layout/Navbar";
-import heroImage from "@/assets/hero-bg.jpg";
+import logoImage from "@/assets/logo.jpeg";
+import bg1 from "@/assets/bg-1.jpeg";
+import bg2 from "@/assets/bg-2.jpeg";
+import bg3 from "@/assets/bg-3.jpeg";
+import bg4 from "@/assets/bg-4.jpeg";
 import aiIcon from "@/assets/ai-analysis-icon.png";
 import wardrobeIcon from "@/assets/wardrobe-icon.png";
 import personalizedIcon from "@/assets/personalized-icon.png";
@@ -38,7 +42,7 @@ const Home = () => {
         <div
           className="absolute inset-0 z-0"
           style={{
-            backgroundImage: `url(${heroImage})`,
+            backgroundImage: `url(${logoImage})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
@@ -92,8 +96,18 @@ const Home = () => {
       </section>
 
       {/* Features Section */}
-      <section id="features" className="py-20 bg-muted/30">
-        <div className="container mx-auto px-4">
+      <section id="features" className="relative py-20">
+        <div
+          className="absolute inset-0 z-0 opacity-10"
+          style={{
+            backgroundImage: `url(${bg2})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        />
+        <div className="absolute inset-0 bg-background/90 z-0" />
+        
+        <div className="container mx-auto px-4 relative z-10">
           <div className="text-center mb-16 animate-slide-up">
             <h2 className="text-4xl md:text-5xl font-bold mb-4">
               لماذا <span className="gradient-text">The Special Style</span>؟
@@ -122,8 +136,18 @@ const Home = () => {
       </section>
 
       {/* How It Works */}
-      <section className="py-20">
-        <div className="container mx-auto px-4">
+      <section className="relative py-20">
+        <div
+          className="absolute inset-0 z-0 opacity-10"
+          style={{
+            backgroundImage: `url(${bg4})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        />
+        <div className="absolute inset-0 bg-background/90 z-0" />
+        
+        <div className="container mx-auto px-4 relative z-10">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-bold mb-4">
               كيف <span className="gradient-text">يعمل؟</span>
