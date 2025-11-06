@@ -40,7 +40,7 @@ const Navbar = () => {
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-3 group">
-          <img src={logoImage} alt="The Special Style" className="w-10 h-10 object-cover rounded-lg shadow-glow transition-transform group-hover:scale-105" />
+          <img src={logoImage} alt="The Special Style" className="w-14 h-14 object-cover rounded-lg shadow-sm transition-transform group-hover:scale-105" />
           <span className="text-xl font-bold gradient-text hidden sm:inline">The Special Style</span>
         </Link>
 
