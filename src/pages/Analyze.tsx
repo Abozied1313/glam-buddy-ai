@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Sparkles, Loader2, Camera } from "lucide-react";
+import { Upload, Sparkles, Loader2, Camera, ArrowRight, Heart } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
@@ -26,6 +26,16 @@ const Analyze = () => {
         setUser(session.user);
       }
     });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        navigate("/auth");
+      } else {
+        setUser(session?.user ?? null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [navigate]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -120,6 +130,24 @@ const Analyze = () => {
       <Navbar />
       <div className="container mx-auto px-4 pt-24 pb-12">
         <div className="max-w-2xl mx-auto">
+          {/* Navigation Buttons */}
+          <div className="flex items-center justify-between mb-6">
+            <Button
+              variant="ghost"
+              onClick={() => navigate("/")}
+            >
+              <ArrowRight className="w-4 h-4 ml-2" />
+              العودة للرئيسية
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => navigate("/favorites")}
+            >
+              <Heart className="w-4 h-4 ml-2" />
+              المفضلة
+            </Button>
+          </div>
+
           <Card className="p-8 shadow-elegant">
             <div className="text-center mb-8">
               <h1 className="text-4xl font-bold gradient-text mb-2">تحليل أسلوبك</h1>

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { Heart, Loader2, Eye } from "lucide-react";
+import { Heart, Loader2, Eye, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
 
@@ -18,6 +18,12 @@ const Favorites = () => {
 
   const loadFavorites = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate("/auth");
+        return;
+      }
+
       const { data, error } = await supabase
         .from("favorites")
         .select(`
@@ -31,6 +37,7 @@ const Favorites = () => {
             created_at
           )
         `)
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -80,6 +87,16 @@ const Favorites = () => {
       <Navbar />
       <div className="container mx-auto px-4 pt-24 pb-12">
         <div className="max-w-6xl mx-auto">
+          {/* Back Button */}
+          <Button
+            variant="ghost"
+            onClick={() => navigate("/analyze")}
+            className="mb-6"
+          >
+            <ArrowRight className="w-4 h-4 ml-2" />
+            العودة للتحليل
+          </Button>
+
           <div className="text-center mb-12">
             <h1 className="text-4xl md:text-5xl font-bold gradient-text mb-4">
               إطلالاتك المفضلة
