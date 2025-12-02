@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.abozied.specialstyle',
-  appName: 'The Special Style',
+  appName: 'The Special Style: AI Stylist',
   webDir: 'dist',
   android: {
     buildOptions: {

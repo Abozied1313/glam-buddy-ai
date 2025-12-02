@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { Heart, ArrowLeft, Loader2 } from "lucide-react";
+import { Heart, ArrowRight, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
 
@@ -27,10 +27,15 @@ const Results = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
   const [analysis, setAnalysis] = useState<any>(null);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+    });
     loadAnalysis();
     checkFavorite();
   }, [id]);
@@ -55,39 +60,94 @@ const Results = () => {
 
   const checkFavorite = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data } = await supabase
         .from("favorites")
         .select("id")
         .eq("analysis_id", id)
-        .single();
+        .eq("user_id", user.id)
+        .maybeSingle();
+      
       setIsFavorite(!!data);
     } catch (error) {
-      // Not in favorites
+      console.error("Error checking favorite:", error);
     }
   };
 
   const toggleFavorite = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        toast.error("يرجى تسجيل الدخول أولاً");
+        return;
+      }
 
       if (isFavorite) {
-        await supabase
+        const { error } = await supabase
           .from("favorites")
           .delete()
           .eq("analysis_id", id)
           .eq("user_id", user.id);
+        
+        if (error) throw error;
         toast.success("تم الإزالة من المفضلة");
         setIsFavorite(false);
       } else {
-        await supabase
+        const { error } = await supabase
           .from("favorites")
           .insert({ analysis_id: id, user_id: user.id });
+        
+        if (error) throw error;
         toast.success("تم الإضافة للمفضلة");
         setIsFavorite(true);
       }
     } catch (error: any) {
+      console.error("Favorite error:", error);
       toast.error("حدث خطأ");
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (!analysis) return;
+    
+    setRegenerating(true);
+    try {
+      const { data: functionData, error: functionError } = await supabase.functions.invoke(
+        "analyze-style",
+        {
+          body: {
+            imageUrl: analysis.image_url,
+            occasion: analysis.occasion,
+            gender: analysis.gender,
+            userId: user?.id,
+            analysisId: analysis.id,
+          },
+        }
+      );
+
+      if (functionError) throw functionError;
+
+      // Update analysis with new results
+      const { error: updateError } = await supabase
+        .from("style_analyses")
+        .update({ 
+          analysis_result: functionData,
+          generated_image_url: functionData.generated_image_url,
+        })
+        .eq("id", id);
+
+      if (updateError) throw updateError;
+
+      // Reload analysis
+      await loadAnalysis();
+      toast.success("تم إعادة التحليل بنجاح!");
+    } catch (error: any) {
+      console.error("Regenerate error:", error);
+      toast.error(error.message || "حدث خطأ في إعادة التحليل");
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -110,18 +170,32 @@ const Results = () => {
       <div className="container mx-auto px-4 pt-24 pb-12">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
             <Button variant="ghost" onClick={() => navigate("/analyze")}>
-              <ArrowLeft className="w-4 h-4 ml-2" />
+              <ArrowRight className="w-4 h-4 ml-2" />
               تحليل جديد
             </Button>
-            <Button
-              variant={isFavorite ? "default" : "outline"}
-              onClick={toggleFavorite}
-            >
-              <Heart className={`w-4 h-4 ml-2 ${isFavorite ? "fill-current" : ""}`} />
-              {isFavorite ? "في المفضلة" : "إضافة للمفضلة"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleRegenerate}
+                disabled={regenerating}
+              >
+                {regenerating ? (
+                  <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 ml-2" />
+                )}
+                إعادة التحليل
+              </Button>
+              <Button
+                variant={isFavorite ? "default" : "outline"}
+                onClick={toggleFavorite}
+              >
+                <Heart className={`w-4 h-4 ml-2 ${isFavorite ? "fill-current" : ""}`} />
+                {isFavorite ? "في المفضلة" : "إضافة للمفضلة"}
+              </Button>
+            </div>
           </div>
 
           {/* Images */}

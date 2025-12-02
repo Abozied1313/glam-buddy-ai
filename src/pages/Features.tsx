@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Camera, Heart, Wand2 } from "lucide-react";
+import { Camera, Heart, Wand2, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Layout/Navbar";
 import bg2 from "@/assets/bg-2.jpeg";
@@ -34,8 +34,20 @@ const Features = () => {
     <div className="min-h-screen bg-background">
       <Navbar />
       
+      {/* Back Button */}
+      <div className="container mx-auto px-4 pt-20">
+        <Button
+          variant="ghost"
+          onClick={() => navigate("/")}
+          className="mb-4"
+        >
+          <ArrowRight className="w-4 h-4 ml-2" />
+          العودة للرئيسية
+        </Button>
+      </div>
+      
       {/* Features Section */}
-      <section id="features" className="relative py-20 mt-16">
+      <section id="features" className="relative py-20">
         <div
           className="absolute inset-0 z-0 opacity-40"
           style={{
