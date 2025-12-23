@@ -6,7 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const REPLICATE_API_TOKEN = Deno.env.get("REPLICATE_API_TOKEN");
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
 const SYSTEM_PROMPT = `أنت "ستايل-نيكسوس" (Style-Nexus)، مستشار موضة شخصي آلي وخبير في الأزياء والملابس والمظهر. مهمتك هي تحليل طلبات المستخدمين وتقديم توصيات شاملة ومفصلة.
@@ -122,125 +121,94 @@ serve(async (req) => {
       };
     }
 
-    // Step 2: Generate image using Replicate FLUX
+    // Step 2: Generate image using Lovable AI (Gemini Image Generation)
     let generatedImageUrl = null;
 
-    if (REPLICATE_API_TOKEN) {
-      console.log("Generating image with Replicate FLUX...");
+    console.log("Generating image with Lovable AI...");
 
-      // Build dynamic prompt based on gender and analysis
-      const outfitDetails = analysisResult.توصيات_الملابس_والأطقم || [];
-      const hairstyleDetails = analysisResult.توصيات_تسريحات_الشعر || [];
+    // Build dynamic prompt based on gender and analysis
+    const outfitDetails = analysisResult.توصيات_الملابس_والأطقم || [];
+    const hairstyleDetails = analysisResult.توصيات_تسريحات_الشعر || [];
 
-      const outfitDescriptions = outfitDetails
-        .map((item: any) => `${item.القطعة} in ${item.اللون} color`)
-        .join(", ");
+    const outfitDescriptions = outfitDetails
+      .slice(0, 2)
+      .map((item: any) => `${item.القطعة || 'elegant outfit'} in ${item.اللون || 'neutral'} color`)
+      .join(", ");
 
-      const hairstyleDescription = hairstyleDetails[0]?.التسريحة || "modern stylish hairstyle";
+    const hairstyleDescription = hairstyleDetails[0]?.التسريحة || "modern stylish hairstyle";
 
-      let stylePrompt = "";
+    let stylePrompt = "";
 
-      if (gender === "male") {
-        stylePrompt = `Professional fashion photography of a stylish Man, ${hairstyleDescription}, wearing ${outfitDescriptions || "elegant modern outfit"}, photorealistic, high quality portrait, studio lighting, fashion magazine style, detailed facial features, sharp focus, 8k`;
-      } else {
-        // Check if occasion suggests modest fashion
-        const isModestOccasion = ["formal", "work", "wedding"].includes(occasion);
-        if (isModestOccasion) {
-          stylePrompt = `Professional fashion photography of a Woman in Modern Hijab style, modest fashion, elegant, ${hairstyleDescription}, wearing ${outfitDescriptions || "sophisticated modest outfit"}, photorealistic, high quality portrait, studio lighting, fashion magazine style, detailed facial features, sharp focus, 8k`;
-        } else {
-          stylePrompt = `Professional fashion photography of a Woman with Modern hair style, trendy outfit, ${hairstyleDescription}, wearing ${outfitDescriptions || "stylish modern clothing"}, photorealistic, high quality portrait, studio lighting, fashion magazine style, detailed facial features, sharp focus, 8k`;
-        }
-      }
-
-      console.log("Image generation prompt:", stylePrompt);
-
-      try {
-        // Call Replicate API for FLUX image generation
-        const replicateResponse = await fetch("https://api.replicate.com/v1/predictions", {
-          method: "POST",
-          headers: {
-            Authorization: `Token ${REPLICATE_API_TOKEN}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            version: "5599ed30703defd1d160a25a63321b4dec97101d98b4674bcc56e41f62f35637",
-            input: {
-              prompt: stylePrompt,
-              negative_prompt: "anime, cartoon, 3d render, painting, illustration, distorted face, deformed, ugly, blurry, bad anatomy, bad proportions, extra limbs, disfigured, mutation, mutated, extra fingers, missing fingers, watermark, signature, text",
-              num_outputs: 1,
-              aspect_ratio: "3:4",
-              output_format: "webp",
-              output_quality: 90,
-              num_inference_steps: 4,
-              go_fast: true,
-            },
-          }),
-        });
-
-        if (!replicateResponse.ok) {
-          const errorText = await replicateResponse.text();
-          console.error("Replicate API error:", errorText);
-        } else {
-          const prediction = await replicateResponse.json();
-          console.log("Replicate prediction created:", prediction.id);
-
-          // Poll for completion
-          let attempts = 0;
-          const maxAttempts = 60;
-
-          while (attempts < maxAttempts) {
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-
-            const statusResponse = await fetch(
-              `https://api.replicate.com/v1/predictions/${prediction.id}`,
-              {
-                headers: {
-                  Authorization: `Token ${REPLICATE_API_TOKEN}`,
-                },
-              }
-            );
-
-            const statusData = await statusResponse.json();
-            console.log("Prediction status:", statusData.status);
-
-            if (statusData.status === "succeeded") {
-              const outputUrl = statusData.output?.[0];
-              if (outputUrl) {
-                // Download and upload to Supabase storage
-                const imageResp = await fetch(outputUrl);
-                const imageBlob = await imageResp.arrayBuffer();
-
-                const fileName = `generated/${userId}/${Date.now()}.webp`;
-                const { error: uploadError } = await supabase.storage
-                  .from("analysis-images")
-                  .upload(fileName, imageBlob, {
-                    contentType: "image/webp",
-                  });
-
-                if (!uploadError) {
-                  const {
-                    data: { publicUrl },
-                  } = supabase.storage.from("analysis-images").getPublicUrl(fileName);
-                  generatedImageUrl = publicUrl;
-                  console.log("Generated image uploaded:", generatedImageUrl);
-                } else {
-                  console.error("Upload error:", uploadError);
-                }
-              }
-              break;
-            } else if (statusData.status === "failed") {
-              console.error("Replicate generation failed:", statusData.error);
-              break;
-            }
-
-            attempts++;
-          }
-        }
-      } catch (replicateError) {
-        console.error("Replicate error:", replicateError);
-      }
+    if (gender === "male") {
+      stylePrompt = `Create a professional fashion portrait of a stylish Arab man with ${hairstyleDescription}, wearing ${outfitDescriptions || "elegant modern outfit"}. High quality, fashion magazine style, studio lighting, clean background. Photorealistic, 8k quality.`;
     } else {
-      console.log("REPLICATE_API_TOKEN not configured");
+      const isModestOccasion = ["formal", "work", "wedding"].includes(occasion);
+      if (isModestOccasion) {
+        stylePrompt = `Create a professional fashion portrait of an elegant Arab woman wearing modern hijab and modest fashion, ${hairstyleDescription}, wearing ${outfitDescriptions || "sophisticated modest outfit"}. High quality, fashion magazine style, studio lighting, clean background. Photorealistic, 8k quality.`;
+      } else {
+        stylePrompt = `Create a professional fashion portrait of a stylish Arab woman with ${hairstyleDescription}, wearing ${outfitDescriptions || "trendy modern clothing"}. High quality, fashion magazine style, studio lighting, clean background. Photorealistic, 8k quality.`;
+      }
+    }
+
+    console.log("Image generation prompt:", stylePrompt);
+
+    try {
+      const imageGenResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash-image-preview",
+          messages: [
+            {
+              role: "user",
+              content: stylePrompt,
+            },
+          ],
+          modalities: ["image", "text"],
+        }),
+      });
+
+      if (!imageGenResponse.ok) {
+        const errorText = await imageGenResponse.text();
+        console.error("Lovable AI Image Generation error:", errorText);
+      } else {
+        const imageGenData = await imageGenResponse.json();
+        console.log("Image generation response received");
+
+        const generatedImage = imageGenData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+
+        if (generatedImage && generatedImage.startsWith("data:image")) {
+          console.log("Generated image received, uploading to storage...");
+
+          // Extract base64 data and upload to Supabase storage
+          const base64Data = generatedImage.split(",")[1];
+          const imageBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+
+          const fileName = `generated/${userId}/${Date.now()}.png`;
+          const { error: uploadError } = await supabase.storage
+            .from("analysis-images")
+            .upload(fileName, imageBytes, {
+              contentType: "image/png",
+            });
+
+          if (!uploadError) {
+            const {
+              data: { publicUrl },
+            } = supabase.storage.from("analysis-images").getPublicUrl(fileName);
+            generatedImageUrl = publicUrl;
+            console.log("Generated image uploaded:", generatedImageUrl);
+          } else {
+            console.error("Upload error:", uploadError);
+          }
+        } else {
+          console.log("No valid image in response");
+        }
+      }
+    } catch (imageError) {
+      console.error("Image generation error:", imageError);
     }
 
     const result = {

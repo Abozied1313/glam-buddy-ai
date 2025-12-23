@@ -2,17 +2,18 @@ import { Button } from "@/components/ui/button";
 import { Sparkles, Camera } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Layout/Navbar";
+import Footer from "@/components/Layout/Footer";
 import logoImage from "@/assets/logo.jpeg";
 
 const Home = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       <Navbar />
       
       {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
+      <section className="relative min-h-screen flex items-center justify-center overflow-hidden flex-1">
         <div
           className="absolute inset-0 z-0"
           style={{
@@ -69,6 +70,7 @@ const Home = () => {
         </div>
       </section>
 
+      <Footer />
     </div>
   );
 };
