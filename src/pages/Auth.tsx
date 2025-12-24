@@ -19,15 +19,17 @@ const Auth = () => {
   const [emailSent, setEmailSent] = useState(false);
 
   useEffect(() => {
-    // Check if user is already logged in
+    // Redirect if user is already logged in (OAuth users may not rely on email confirmation flag)
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.email_confirmed_at) {
+      if (session?.user) {
         navigate("/analyze");
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session?.user?.email_confirmed_at) {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session?.user) {
         navigate("/analyze");
       }
     });
@@ -84,24 +86,21 @@ const Auth = () => {
     }
   };
 
-  const handleSocialLogin = async (provider: "google" | "azure" | "facebook") => {
+  const handleGoogleLogin = async () => {
     setLoading(true);
     try {
       const redirectUrl = `${window.location.origin}/analyze`;
-      
+
       const { error } = await supabase.auth.signInWithOAuth({
-        provider: provider === "azure" ? "azure" : provider,
+        provider: "google",
         options: {
           redirectTo: redirectUrl,
-          ...(provider === "azure" && {
-            scopes: "email profile openid",
-          }),
         },
       });
-      
+
       if (error) throw error;
     } catch (error: any) {
-      toast.error(error.message || "حدث خطأ في تسجيل الدخول");
+      toast.error(error?.message || "حدث خطأ في تسجيل الدخول عبر Google");
       setLoading(false);
     }
   };
@@ -211,10 +210,14 @@ const Auth = () => {
             <CardContent>
               {/* Social Login Buttons */}
               <div className="space-y-3 mb-6">
+                <p className="text-xs text-muted-foreground text-center">
+                  تسجيل الدخول الاجتماعي المتاح حالياً: Google فقط. إذا ظهر خطأ 403 من Google فذلك يعني أن إعدادات Google غير مكتملة في الخلفية.
+                </p>
+
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => handleSocialLogin("google")}
+                  onClick={handleGoogleLogin}
                   disabled={loading}
                 >
                   <svg className="w-5 h-5 ml-2" viewBox="0 0 24 24">
@@ -225,12 +228,13 @@ const Auth = () => {
                   </svg>
                   المتابعة مع Google
                 </Button>
-                
+
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => handleSocialLogin("azure")}
-                  disabled={loading}
+                  disabled
+                  aria-disabled="true"
+                  title="غير متاح حالياً"
                 >
                   <svg className="w-5 h-5 ml-2" viewBox="0 0 24 24">
                     <path fill="#F25022" d="M1 1h10v10H1z"/>
@@ -238,19 +242,20 @@ const Auth = () => {
                     <path fill="#7FBA00" d="M13 1h10v10H13z"/>
                     <path fill="#FFB900" d="M13 13h10v10H13z"/>
                   </svg>
-                  المتابعة مع Microsoft
+                  المتابعة مع Microsoft (غير متاح حالياً)
                 </Button>
-                
+
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => handleSocialLogin("facebook")}
-                  disabled={loading}
+                  disabled
+                  aria-disabled="true"
+                  title="غير متاح حالياً"
                 >
                   <svg className="w-5 h-5 ml-2" viewBox="0 0 24 24" fill="#1877F2">
                     <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                   </svg>
-                  المتابعة مع Facebook
+                  المتابعة مع Facebook (غير متاح حالياً)
                 </Button>
               </div>
 
