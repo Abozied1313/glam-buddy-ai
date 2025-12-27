@@ -8,24 +8,35 @@ const corsHeaders = {
 
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-const SYSTEM_PROMPT = `أنت "ستايل-نيكسوس" (Style-Nexus)، مستشار موضة شخصي آلي وخبير في الأزياء والملابس والمظهر. مهمتك هي تحليل طلبات المستخدمين وتقديم توصيات شاملة ومفصلة.
+const SYSTEM_PROMPT = `أنت "Style Nexus" - مستشار أزياء خبير ونظام ذكاء اصطناعي للتنسيق الشخصي.
 
-[المبادئ التوجيهية:]
-1. الملاءمة قبل كل شيء: يجب أن تتناسب التوصيات مع المناسبة ونوع جسم المستخدم.
-2. التخصص في الموضة: لا تتطرق لأي مواضيع خارج نطاق الأزياء والستايل.
-3. الاحترافية والود: حافظ على نبرة ودية واحترافية.
+عند تحميل المستخدم لصورته، حللها وقدم توصيات شاملة حيث:
+- يتم تحليل ملامح الوجه، شكل الجسم، ولون البشرة
+- تقديم توصيات ملابس مخصصة بناءً على شكل الجسم ولون البشرة والمناسبة
+- للنساء: إضافة اقتراحات مكياج مناسب + تنسيق الحجاب (إذا كانت محجبة)
+- للرجال: اقتراح تسريحة شعر (إعادة تصفيف الشعر الحالي، ليس قصة جديدة)
+
+[قواعد حاسمة:]
+1. كل مستخدم يحصل على توصيات ملابس فريدة بناءً على شكل جسمه ولون بشرته والمناسبة
+2. لا تستخدم اقتراحات عامة مثل "بولو وبنطلون تشينو" للجميع
+3. للنساء المحجبات: اقتراح لون ولفة الحجاب تتناسب مع الإطلالة
+4. للرجال: اقتراح تصفيف شعر (ليس قصة) يتناسب مع طول شعرهم الحالي
+5. لغة المخرجات تتطابق مع لغة المستخدم
 
 [المخرجات المطلوبة - JSON فقط:]
 {
-  "تحليل_المدخلات": "ملخص شامل لمدخلات المستخدم",
+  "تحليل_المدخلات": "وصف دقيق لشكل الجسم ولون البشرة والستايل الحالي",
   "توصيات_تسريحات_الشعر": [
-    {"التسريحة": "اسم التسريحة", "الملاءمة": "سبب الملاءمة"}
+    {"التسريحة": "اسم التسريحة المحدد", "الملاءمة": "لماذا تناسب هذا المستخدم بالذات"}
   ],
   "توصيات_الملابس_والأطقم": [
-    {"القطعة": "اسم القطعة", "اللون": "اللون", "الخامة": "نوع القماش", "السبب": "سبب الاختيار"}
+    {"القطعة": "اسم القطعة المحددة", "اللون": "اللون المحدد", "الخامة": "نوع القماش", "السبب": "لماذا يناسب هذا المستخدم بالذات"}
   ],
-  "الأسلوب_والتنسيق_المقترح": "نصائح التنسيق",
-  "ملاحظات_أخلاقية_وعملية": "نصائح إضافية"
+  "اقتراحات_المكياج": "للإناث فقط: مكياج يناسب شكل الوجه ولون البشرة",
+  "تنسيق_الحجاب": "للمحجبات فقط: لون ولفة الحجاب المقترحة",
+  "الأسلوب_والتنسيق_المقترح": "نصائح التنسيق المخصصة",
+  "ملاحظات_أخلاقية_وعملية": "نصائح عملية إضافية",
+  "image_generation_prompt": "A photorealistic fashion portrait preserving the analysis context. Technical requirements: professional photography, 8K resolution, natural lighting, fashion magazine style. Include specific outfit details, colors, and styling."
 }`;
 
 serve(async (req) => {
@@ -65,7 +76,16 @@ serve(async (req) => {
     };
 
     const genderLabel = gender === "male" ? "رجل" : "امرأة";
-    const userPrompt = `قم بتحليل هذه الصورة لـ ${genderLabel} وقدم توصيات أزياء وتسريحات شعر مناسبة للمناسبة: ${occasionLabels[occasion] || occasion}. أعد النتيجة بتنسيق JSON فقط.`;
+    const hijabNote = gender === "female" ? " (لاحظ إذا كانت ترتدي حجاب وقدم توصيات مناسبة)" : "";
+    const userPrompt = `قم بتحليل هذه الصورة لـ ${genderLabel}${hijabNote} وقدم توصيات أزياء وتسريحات شعر مخصصة ومفصلة للمناسبة: ${occasionLabels[occasion] || occasion}. 
+    
+تحليل دقيق مطلوب:
+1. شكل الجسم ولون البشرة
+2. الستايل الحالي
+3. توصيات ملابس محددة (ليست عامة) تناسب هذا الشخص بالذات
+4. ${gender === "male" ? "تصفيف شعر يناسب طول شعره الحالي" : "مكياج وتسريحة شعر/حجاب مناسبة"}
+
+أعد النتيجة بتنسيق JSON فقط.`;
 
     console.log("Calling Lovable AI for style analysis...");
 
@@ -129,10 +149,12 @@ serve(async (req) => {
     // Build dynamic prompt based on gender and analysis
     const outfitDetails = analysisResult.توصيات_الملابس_والأطقم || [];
     const hairstyleDetails = analysisResult.توصيات_تسريحات_الشعر || [];
+    const makeupDetails = analysisResult.اقتراحات_المكياج || "";
+    const hijabDetails = analysisResult.تنسيق_الحجاب || "";
 
     const outfitDescriptions = outfitDetails
-      .slice(0, 2)
-      .map((item: any) => `${item.القطعة || 'elegant outfit'} in ${item.اللون || 'neutral'} color`)
+      .slice(0, 3)
+      .map((item: any) => `${item.القطعة || 'elegant piece'} in ${item.اللون || 'neutral'} color made of ${item.الخامة || 'quality fabric'}`)
       .join(", ");
 
     const hairstyleDescription = hairstyleDetails[0]?.التسريحة || "modern stylish hairstyle";
@@ -140,13 +162,27 @@ serve(async (req) => {
     let stylePrompt = "";
 
     if (gender === "male") {
-      stylePrompt = `Create a professional fashion portrait of a stylish Arab man with ${hairstyleDescription}, wearing ${outfitDescriptions || "elegant modern outfit"}. High quality, fashion magazine style, studio lighting, clean background. Photorealistic, 8k quality.`;
+      stylePrompt = `Create a photorealistic professional fashion portrait of a stylish Arab man. 
+Hair: ${hairstyleDescription} (restyled, not a new haircut).
+Outfit: ${outfitDescriptions || "elegant modern outfit tailored to body type"}.
+Technical: High quality fashion magazine photography, studio lighting, clean background, 8K resolution, photorealistic, preserve natural skin tone and features.
+Negative prompt: cartoon, anime, illustration, deformed features, different person.`;
     } else {
-      const isModestOccasion = ["formal", "work", "wedding"].includes(occasion);
-      if (isModestOccasion) {
-        stylePrompt = `Create a professional fashion portrait of an elegant Arab woman wearing modern hijab and modest fashion, ${hairstyleDescription}, wearing ${outfitDescriptions || "sophisticated modest outfit"}. High quality, fashion magazine style, studio lighting, clean background. Photorealistic, 8k quality.`;
+      const hasHijab = hijabDetails && hijabDetails.length > 0;
+      if (hasHijab) {
+        stylePrompt = `Create a photorealistic professional fashion portrait of an elegant Arab woman wearing hijab.
+Hijab: ${hijabDetails}.
+${makeupDetails ? `Makeup: ${makeupDetails}.` : ""}
+Outfit: ${outfitDescriptions || "sophisticated modest fashion tailored to body type"}.
+Technical: High quality fashion magazine photography, studio lighting, clean background, 8K resolution, photorealistic, preserve natural skin tone and features.
+Negative prompt: cartoon, anime, illustration, deformed features, different person.`;
       } else {
-        stylePrompt = `Create a professional fashion portrait of a stylish Arab woman with ${hairstyleDescription}, wearing ${outfitDescriptions || "trendy modern clothing"}. High quality, fashion magazine style, studio lighting, clean background. Photorealistic, 8k quality.`;
+        stylePrompt = `Create a photorealistic professional fashion portrait of a stylish Arab woman.
+Hairstyle: ${hairstyleDescription}.
+${makeupDetails ? `Makeup: ${makeupDetails}.` : ""}
+Outfit: ${outfitDescriptions || "trendy modern clothing tailored to body type"}.
+Technical: High quality fashion magazine photography, studio lighting, clean background, 8K resolution, photorealistic, preserve natural skin tone and features.
+Negative prompt: cartoon, anime, illustration, deformed features, different person.`;
       }
     }
 
