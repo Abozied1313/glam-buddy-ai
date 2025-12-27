@@ -3,7 +3,7 @@ import { Sparkles, Camera } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Layout/Navbar";
 import Footer from "@/components/Layout/Footer";
-import logoImage from "@/assets/logo.jpeg";
+import logoImage from "@/assets/logo.webp";
 
 const Home = () => {
   const navigate = useNavigate();
