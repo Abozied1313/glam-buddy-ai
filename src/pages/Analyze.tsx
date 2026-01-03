@@ -68,17 +68,20 @@ const Analyze = () => {
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
+      // Get signed URL for private bucket
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from("analysis-images")
-        .getPublicUrl(fileName);
+        .createSignedUrl(fileName, 60 * 60); // 1 hour expiry
+
+      if (signedUrlError) throw signedUrlError;
+      const imageUrl = signedUrlData.signedUrl;
 
       // Create analysis record first to get ID
       const { data: analysisRecord, error: dbError } = await supabase
         .from("style_analyses")
         .insert({
           user_id: user.id,
-          image_url: publicUrl,
+          image_url: imageUrl,
           occasion,
           gender,
           analysis_result: {},
@@ -93,7 +96,7 @@ const Analyze = () => {
         "analyze-style",
         {
           body: {
-            imageUrl: publicUrl,
+            imageUrl: imageUrl,
             occasion,
             gender,
             userId: user.id,

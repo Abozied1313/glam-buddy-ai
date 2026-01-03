@@ -7,6 +7,19 @@ const corsHeaders = {
 };
 
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+// Allowed values for validation
+const ALLOWED_OCCASIONS = ["casual", "work", "formal", "party", "wedding", "sport"];
+const ALLOWED_GENDERS = ["male", "female"];
+
+// UUID validation regex
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// Extract allowed domain for URL validation
+const ALLOWED_DOMAIN = SUPABASE_URL.replace("https://", "");
 
 const SYSTEM_PROMPT = `أنت "Style Nexus" - مستشار أزياء خبير ونظام ذكاء اصطناعي للتنسيق الشخصي.
 
@@ -39,21 +52,148 @@ const SYSTEM_PROMPT = `أنت "Style Nexus" - مستشار أزياء خبير �
   "image_generation_prompt": "A photorealistic fashion portrait preserving the analysis context. Technical requirements: professional photography, 8K resolution, natural lighting, fashion magazine style. Include specific outfit details, colors, and styling."
 }`;
 
+// Input validation functions
+function isValidUUID(str: string): boolean {
+  return UUID_REGEX.test(str);
+}
+
+function isValidImageUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    // Must be HTTPS
+    if (parsedUrl.protocol !== "https:") {
+      return false;
+    }
+    // Must be from our Supabase storage domain
+    if (!parsedUrl.hostname.includes(ALLOWED_DOMAIN.split(".")[0])) {
+      return false;
+    }
+    // Must be from analysis-images bucket
+    if (!parsedUrl.pathname.includes("/storage/v1/object/") || !parsedUrl.pathname.includes("analysis-images")) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validateInput(data: any): { valid: boolean; error?: string } {
+  // Check required fields exist
+  if (!data.imageUrl || typeof data.imageUrl !== "string") {
+    return { valid: false, error: "Missing or invalid imageUrl" };
+  }
+  if (!data.occasion || typeof data.occasion !== "string") {
+    return { valid: false, error: "Missing or invalid occasion" };
+  }
+  if (!data.gender || typeof data.gender !== "string") {
+    return { valid: false, error: "Missing or invalid gender" };
+  }
+  if (!data.analysisId || typeof data.analysisId !== "string") {
+    return { valid: false, error: "Missing or invalid analysisId" };
+  }
+
+  // Validate imageUrl - prevent SSRF
+  if (!isValidImageUrl(data.imageUrl)) {
+    return { valid: false, error: "Invalid imageUrl: must be from allowed storage domain" };
+  }
+
+  // Validate occasion
+  if (!ALLOWED_OCCASIONS.includes(data.occasion)) {
+    return { valid: false, error: `Invalid occasion: must be one of ${ALLOWED_OCCASIONS.join(", ")}` };
+  }
+
+  // Validate gender
+  if (!ALLOWED_GENDERS.includes(data.gender)) {
+    return { valid: false, error: `Invalid gender: must be one of ${ALLOWED_GENDERS.join(", ")}` };
+  }
+
+  // Validate analysisId UUID format
+  if (!isValidUUID(data.analysisId)) {
+    return { valid: false, error: "Invalid analysisId: must be a valid UUID" };
+  }
+
+  return { valid: true };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { imageUrl, occasion, gender, userId, analysisId } = await req.json();
-    console.log("Starting analysis for:", { occasion, gender, analysisId });
+    // SECURITY: Verify authentication
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      console.error("Missing authorization header");
+      return new Response(
+        JSON.stringify({ error: "Missing authorization" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Create client with user's auth token to verify identity
+    const userSupabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const { data: { user }, error: userError } = await userSupabase.auth.getUser();
+    if (userError || !user) {
+      console.error("Invalid authentication:", userError?.message);
+      return new Response(
+        JSON.stringify({ error: "Invalid authentication" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const authenticatedUserId = user.id;
+    console.log("Authenticated user:", authenticatedUserId);
+
+    // Parse and validate input
+    const requestData = await req.json();
+    const { imageUrl, occasion, gender, userId, analysisId } = requestData;
+    
+    // SECURITY: Validate all inputs
+    const validation = validateInput(requestData);
+    if (!validation.valid) {
+      console.error("Input validation failed:", validation.error);
+      return new Response(
+        JSON.stringify({ error: validation.error }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // SECURITY: Verify authenticated user matches requested userId
+    if (userId && userId !== authenticatedUserId) {
+      console.error("Authorization failed: user mismatch", { authenticated: authenticatedUserId, requested: userId });
+      return new Response(
+        JSON.stringify({ error: "Unauthorized: cannot process data for another user" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Use authenticated user ID for all operations
+    const effectiveUserId = authenticatedUserId;
+
+    console.log("Starting analysis for:", { occasion, gender, analysisId, userId: effectiveUserId });
+
+    // Create service role client for database operations
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // Fetch and encode image to base64
-    const imageResponse = await fetch(imageUrl);
+    const imageResponse = await fetch(imageUrl, {
+      signal: AbortSignal.timeout(30000), // 30 second timeout
+    });
+    
+    if (!imageResponse.ok) {
+      throw new Error("Failed to fetch image");
+    }
+    
+    const contentLength = imageResponse.headers.get("content-length");
+    if (contentLength && parseInt(contentLength) > 10 * 1024 * 1024) {
+      throw new Error("Image too large: maximum 10MB allowed");
+    }
+
     const imageBuffer = await imageResponse.arrayBuffer();
     const uint8Array = new Uint8Array(imageBuffer);
     const chunkSize = 8192;
@@ -223,7 +363,8 @@ Negative prompt: cartoon, anime, illustration, deformed features, different pers
           const base64Data = generatedImage.split(",")[1];
           const imageBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
 
-          const fileName = `generated/${userId}/${Date.now()}.png`;
+          // Use authenticated user ID for storage path
+          const fileName = `generated/${effectiveUserId}/${Date.now()}.png`;
           const { error: uploadError } = await supabase.storage
             .from("analysis-images")
             .upload(fileName, imageBytes, {
@@ -231,11 +372,17 @@ Negative prompt: cartoon, anime, illustration, deformed features, different pers
             });
 
           if (!uploadError) {
-            const {
-              data: { publicUrl },
-            } = supabase.storage.from("analysis-images").getPublicUrl(fileName);
-            generatedImageUrl = publicUrl;
-            console.log("Generated image uploaded:", generatedImageUrl);
+            // Create signed URL instead of public URL for private bucket
+            const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+              .from("analysis-images")
+              .createSignedUrl(fileName, 60 * 60 * 24 * 7); // 7 days expiry
+            
+            if (!signedUrlError && signedUrlData) {
+              generatedImageUrl = signedUrlData.signedUrl;
+              console.log("Generated image uploaded with signed URL");
+            } else {
+              console.error("Signed URL error:", signedUrlError);
+            }
           } else {
             console.error("Upload error:", uploadError);
           }
