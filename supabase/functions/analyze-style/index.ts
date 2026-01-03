@@ -405,10 +405,16 @@ Negative prompt: cartoon, anime, illustration, deformed features, different pers
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {
+    // Log detailed error for debugging (server-side only)
     console.error("Error in analyze-style:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    
+    // Return generic error message to client - never expose internal details
+    return new Response(
+      JSON.stringify({ error: "حدث خطأ في التحليل. يرجى المحاولة مرة أخرى." }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   }
 });
