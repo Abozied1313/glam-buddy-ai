@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Camera, Heart, Wand2, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Layout/Navbar";
+import Footer from "@/components/Layout/Footer";
 import bg2 from "@/assets/bg-2.jpeg";
 import bg4 from "@/assets/bg-4.jpeg";
 import aiIcon from "@/assets/ai-analysis-icon.png";
@@ -143,12 +144,7 @@ const Features = () => {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="py-8 border-t border-border/50">
-        <div className="container mx-auto px-4 text-center text-muted-foreground">
-          <p>© 2024 The Special Style. جميع الحقوق محفوظة.</p>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 };
