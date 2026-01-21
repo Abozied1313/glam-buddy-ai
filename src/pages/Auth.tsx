@@ -19,6 +19,24 @@ const Auth = () => {
   const [emailSent, setEmailSent] = useState(false);
 
   useEffect(() => {
+    // Show OAuth errors (e.g., Google 403 / access_denied) if they come back in the URL
+    // Supabase providers may return params via either querystring or hash.
+    const url = new URL(window.location.href);
+    const hashParams = new URLSearchParams((url.hash || "").replace(/^#/, ""));
+    const q = url.searchParams;
+
+    const oauthError = q.get("error") || hashParams.get("error");
+    const oauthErrorDescription =
+      q.get("error_description") || hashParams.get("error_description");
+
+    if (oauthError) {
+      toast.error(
+        oauthErrorDescription
+          ? decodeURIComponent(oauthErrorDescription)
+          : `فشل تسجيل الدخول عبر Google: ${oauthError}`
+      );
+    }
+
     // Redirect if user is already logged in (OAuth users may not rely on email confirmation flag)
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
@@ -89,7 +107,9 @@ const Auth = () => {
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
-      const redirectUrl = `${window.location.origin}/auth/callback`;
+      // Use /auth as the canonical redirect to reduce provider redirect-URI mismatches.
+      // We still support /auth/callback route for compatibility.
+      const redirectUrl = `${window.location.origin}/auth`;
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
