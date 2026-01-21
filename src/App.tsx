@@ -35,6 +35,8 @@ const App = () => (
             <Route path="/" element={<Home />} />
             <Route path="/features" element={<Features />} />
             <Route path="/auth" element={<Auth />} />
+            {/* OAuth providers may redirect back to a callback path; render Auth to finalize session */}
+            <Route path="/auth/callback" element={<Auth />} />
             <Route path="/analyze" element={<Analyze />} />
             <Route path="/results/:id" element={<Results />} />
             <Route path="/favorites" element={<Favorites />} />
