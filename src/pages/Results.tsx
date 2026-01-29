@@ -3,10 +3,10 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { Heart, ArrowRight, Loader2, RefreshCw } from "lucide-react";
+import { Heart, ArrowRight, Loader2, RefreshCw, ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
-
+import { useRefreshSignedUrls } from "@/hooks/useRefreshSignedUrls";
 interface AnalysisResult {
   تحليل_المدخلات: string;
   توصيات_تسريحات_الشعر: Array<{
@@ -164,6 +164,12 @@ const Results = () => {
 
   const result: AnalysisResult = analysis?.analysis_result;
 
+  // Refresh signed URLs for the images
+  const { refreshedImageUrl, refreshedGeneratedUrl, loading: urlsLoading } = useRefreshSignedUrls(
+    analysis?.image_url || null,
+    analysis?.generated_image_url || null
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted to-background">
       <Navbar />
@@ -202,23 +208,52 @@ const Results = () => {
           <div className="grid md:grid-cols-2 gap-6 mb-8">
             <Card className="p-6 shadow-elegant">
               <h3 className="text-lg font-bold mb-4 text-center">صورتك</h3>
-              <img
-                src={analysis.image_url}
-                alt="Your Photo"
-                className="w-full max-h-80 object-contain rounded-lg"
-              />
+              {urlsLoading ? (
+                <div className="w-full h-64 flex items-center justify-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              ) : refreshedImageUrl ? (
+                <img
+                  src={refreshedImageUrl}
+                  alt="Your Photo"
+                  className="w-full max-h-80 object-contain rounded-lg"
+                  onError={(e) => {
+                    console.error("Image load error");
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="w-full h-64 flex flex-col items-center justify-center text-muted-foreground">
+                  <ImageOff className="w-12 h-12 mb-2" />
+                  <p>تعذر تحميل الصورة</p>
+                </div>
+              )}
             </Card>
             
-            {analysis.generated_image_url && (
-              <Card className="p-6 shadow-elegant gradient-card-bg">
-                <h3 className="text-lg font-bold mb-4 text-center gradient-text">التصميم المقترح</h3>
+            <Card className="p-6 shadow-elegant gradient-card-bg">
+              <h3 className="text-lg font-bold mb-4 text-center gradient-text">التصميم المقترح</h3>
+              {urlsLoading ? (
+                <div className="w-full h-64 flex items-center justify-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              ) : refreshedGeneratedUrl ? (
                 <img
-                  src={analysis.generated_image_url}
+                  src={refreshedGeneratedUrl}
                   alt="Generated Style"
                   className="w-full max-h-80 object-contain rounded-lg"
+                  onError={(e) => {
+                    console.error("Generated image load error");
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
                 />
-              </Card>
-            )}
+              ) : (
+                <div className="w-full h-64 flex flex-col items-center justify-center text-muted-foreground">
+                  <ImageOff className="w-12 h-12 mb-2" />
+                  <p>لم يتم إنشاء صورة مقترحة</p>
+                  <p className="text-sm mt-1">جرب إعادة التحليل</p>
+                </div>
+              )}
+            </Card>
           </div>
 
           {/* Analysis Summary */}

@@ -336,7 +336,7 @@ Negative prompt: cartoon, anime, illustration, deformed features, different pers
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash-image-preview",
+          model: "google/gemini-3-pro-image-preview",
           messages: [
             {
               role: "user",
@@ -352,16 +352,44 @@ Negative prompt: cartoon, anime, illustration, deformed features, different pers
         console.error("Lovable AI Image Generation error:", errorText);
       } else {
         const imageGenData = await imageGenResponse.json();
-        console.log("Image generation response received");
+        console.log("Image generation response structure:", JSON.stringify(imageGenData, null, 2));
 
-        const generatedImage = imageGenData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+        // Try different possible response structures
+        let generatedImage = imageGenData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+        
+        // Alternative structures
+        if (!generatedImage) {
+          generatedImage = imageGenData.choices?.[0]?.message?.content;
+          if (typeof generatedImage === 'object' && generatedImage?.image_url) {
+            generatedImage = generatedImage.image_url.url;
+          }
+        }
+        
+        if (!generatedImage) {
+          const content = imageGenData.choices?.[0]?.message?.content;
+          if (Array.isArray(content)) {
+            const imageContent = content.find((c: any) => c.type === 'image_url' || c.image_url);
+            if (imageContent) {
+              generatedImage = imageContent.image_url?.url || imageContent.url;
+            }
+          }
+        }
 
-        if (generatedImage && generatedImage.startsWith("data:image")) {
+        if (generatedImage && (generatedImage.startsWith("data:image") || generatedImage.startsWith("http"))) {
           console.log("Generated image received, uploading to storage...");
 
-          // Extract base64 data and upload to Supabase storage
-          const base64Data = generatedImage.split(",")[1];
-          const imageBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+          let imageBytes: Uint8Array;
+          
+          if (generatedImage.startsWith("data:image")) {
+            // Base64 image
+            const base64Data = generatedImage.split(",")[1];
+            imageBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+          } else {
+            // URL image - fetch and convert
+            const imageResponse = await fetch(generatedImage);
+            const arrayBuffer = await imageResponse.arrayBuffer();
+            imageBytes = new Uint8Array(arrayBuffer);
+          }
 
           // Use authenticated user ID for storage path
           const fileName = `generated/${effectiveUserId}/${Date.now()}.png`;
@@ -387,7 +415,7 @@ Negative prompt: cartoon, anime, illustration, deformed features, different pers
             console.error("Upload error:", uploadError);
           }
         } else {
-          console.log("No valid image in response");
+          console.log("No valid image in response, received:", typeof generatedImage);
         }
       }
     } catch (imageError) {
