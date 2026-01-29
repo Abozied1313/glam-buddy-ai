@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+const REPLICATE_API_TOKEN = Deno.env.get("REPLICATE_API_TOKEN");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -281,10 +282,10 @@ serve(async (req) => {
       };
     }
 
-    // Step 2: Generate image using Lovable AI (Gemini Image Generation)
+    // Step 2: Generate image using Replicate (FLUX model)
     let generatedImageUrl = null;
 
-    console.log("Generating image with Lovable AI...");
+    console.log("Generating image with Replicate FLUX...");
 
     // Build dynamic prompt based on gender and analysis
     const outfitDetails = analysisResult.توصيات_الملابس_والأطقم || [];
@@ -302,124 +303,117 @@ serve(async (req) => {
     let stylePrompt = "";
 
     if (gender === "male") {
-      stylePrompt = `Create a photorealistic professional fashion portrait of a stylish Arab man. 
-Hair: ${hairstyleDescription} (restyled, not a new haircut).
-Outfit: ${outfitDescriptions || "elegant modern outfit tailored to body type"}.
-Technical: High quality fashion magazine photography, studio lighting, clean background, 8K resolution, photorealistic, preserve natural skin tone and features.
-Negative prompt: cartoon, anime, illustration, deformed features, different person.`;
+      stylePrompt = `A photorealistic professional fashion portrait of a stylish Arab man. Hair styled as ${hairstyleDescription}. Wearing ${outfitDescriptions || "elegant modern outfit tailored to body type"}. High quality fashion magazine photography, studio lighting, clean white background, 8K resolution, photorealistic, natural skin tone.`;
     } else {
       const hasHijab = hijabDetails && hijabDetails.length > 0;
       if (hasHijab) {
-        stylePrompt = `Create a photorealistic professional fashion portrait of an elegant Arab woman wearing hijab.
-Hijab: ${hijabDetails}.
-${makeupDetails ? `Makeup: ${makeupDetails}.` : ""}
-Outfit: ${outfitDescriptions || "sophisticated modest fashion tailored to body type"}.
-Technical: High quality fashion magazine photography, studio lighting, clean background, 8K resolution, photorealistic, preserve natural skin tone and features.
-Negative prompt: cartoon, anime, illustration, deformed features, different person.`;
+        stylePrompt = `A photorealistic professional fashion portrait of an elegant Arab woman wearing hijab. Hijab: ${hijabDetails}. ${makeupDetails ? `Makeup: ${makeupDetails}.` : ""} Wearing ${outfitDescriptions || "sophisticated modest fashion tailored to body type"}. High quality fashion magazine photography, studio lighting, clean white background, 8K resolution, photorealistic.`;
       } else {
-        stylePrompt = `Create a photorealistic professional fashion portrait of a stylish Arab woman.
-Hairstyle: ${hairstyleDescription}.
-${makeupDetails ? `Makeup: ${makeupDetails}.` : ""}
-Outfit: ${outfitDescriptions || "trendy modern clothing tailored to body type"}.
-Technical: High quality fashion magazine photography, studio lighting, clean background, 8K resolution, photorealistic, preserve natural skin tone and features.
-Negative prompt: cartoon, anime, illustration, deformed features, different person.`;
+        stylePrompt = `A photorealistic professional fashion portrait of a stylish Arab woman. Hairstyle: ${hairstyleDescription}. ${makeupDetails ? `Makeup: ${makeupDetails}.` : ""} Wearing ${outfitDescriptions || "trendy modern clothing tailored to body type"}. High quality fashion magazine photography, studio lighting, clean white background, 8K resolution, photorealistic.`;
       }
     }
 
     console.log("Image generation prompt:", stylePrompt);
 
-    try {
-      const imageGenResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-3-pro-image-preview",
-          messages: [
-            {
-              role: "user",
-              content: stylePrompt,
+    if (!REPLICATE_API_TOKEN) {
+      console.error("REPLICATE_API_TOKEN is not configured");
+    } else {
+      try {
+        // Use FLUX Schnell model for fast generation
+        const replicateResponse = await fetch("https://api.replicate.com/v1/predictions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
+            "Content-Type": "application/json",
+            "Prefer": "wait",
+          },
+          body: JSON.stringify({
+            version: "5599ed30703defd1d160a25a63321b4dec97101d98b4674bcc56e41f62f35637",
+            input: {
+              prompt: stylePrompt,
+              num_outputs: 1,
+              aspect_ratio: "3:4",
+              output_format: "webp",
+              output_quality: 90,
+              num_inference_steps: 4,
+              go_fast: true,
             },
-          ],
-          modalities: ["image", "text"],
-        }),
-      });
+          }),
+        });
 
-      if (!imageGenResponse.ok) {
-        const errorText = await imageGenResponse.text();
-        console.error("Lovable AI Image Generation error:", errorText);
-      } else {
-        const imageGenData = await imageGenResponse.json();
-        console.log("Image generation response structure:", JSON.stringify(imageGenData, null, 2));
-
-        // Try different possible response structures
-        let generatedImage = imageGenData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-        
-        // Alternative structures
-        if (!generatedImage) {
-          generatedImage = imageGenData.choices?.[0]?.message?.content;
-          if (typeof generatedImage === 'object' && generatedImage?.image_url) {
-            generatedImage = generatedImage.image_url.url;
-          }
-        }
-        
-        if (!generatedImage) {
-          const content = imageGenData.choices?.[0]?.message?.content;
-          if (Array.isArray(content)) {
-            const imageContent = content.find((c: any) => c.type === 'image_url' || c.image_url);
-            if (imageContent) {
-              generatedImage = imageContent.image_url?.url || imageContent.url;
-            }
-          }
-        }
-
-        if (generatedImage && (generatedImage.startsWith("data:image") || generatedImage.startsWith("http"))) {
-          console.log("Generated image received, uploading to storage...");
-
-          let imageBytes: Uint8Array;
-          
-          if (generatedImage.startsWith("data:image")) {
-            // Base64 image
-            const base64Data = generatedImage.split(",")[1];
-            imageBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
-          } else {
-            // URL image - fetch and convert
-            const imageResponse = await fetch(generatedImage);
-            const arrayBuffer = await imageResponse.arrayBuffer();
-            imageBytes = new Uint8Array(arrayBuffer);
-          }
-
-          // Use authenticated user ID for storage path
-          const fileName = `generated/${effectiveUserId}/${Date.now()}.png`;
-          const { error: uploadError } = await supabase.storage
-            .from("analysis-images")
-            .upload(fileName, imageBytes, {
-              contentType: "image/png",
-            });
-
-          if (!uploadError) {
-            // Create signed URL instead of public URL for private bucket
-            const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-              .from("analysis-images")
-              .createSignedUrl(fileName, 60 * 60 * 24 * 7); // 7 days expiry
-            
-            if (!signedUrlError && signedUrlData) {
-              generatedImageUrl = signedUrlData.signedUrl;
-              console.log("Generated image uploaded with signed URL");
-            } else {
-              console.error("Signed URL error:", signedUrlError);
-            }
-          } else {
-            console.error("Upload error:", uploadError);
-          }
+        if (!replicateResponse.ok) {
+          const errorText = await replicateResponse.text();
+          console.error("Replicate API error:", replicateResponse.status, errorText);
         } else {
-          console.log("No valid image in response, received:", typeof generatedImage);
+          let prediction = await replicateResponse.json();
+          console.log("Replicate prediction status:", prediction.status);
+
+          // If still processing, poll for completion
+          if (prediction.status === "starting" || prediction.status === "processing") {
+            let attempts = 0;
+            const maxAttempts = 30; // 30 seconds max wait
+            
+            while (prediction.status !== "succeeded" && prediction.status !== "failed" && attempts < maxAttempts) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              const pollResponse = await fetch(prediction.urls.get, {
+                headers: {
+                  "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
+                },
+              });
+              
+              prediction = await pollResponse.json();
+              attempts++;
+              console.log(`Poll attempt ${attempts}: ${prediction.status}`);
+            }
+          }
+
+          if (prediction.status === "succeeded" && prediction.output) {
+            const generatedImage = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+            
+            if (generatedImage && generatedImage.startsWith("http")) {
+              console.log("Generated image received from Replicate, downloading...");
+
+              // Download the image
+              const imageResponse = await fetch(generatedImage);
+              if (imageResponse.ok) {
+                const arrayBuffer = await imageResponse.arrayBuffer();
+                const imageBytes = new Uint8Array(arrayBuffer);
+
+                // Upload to storage
+                const fileName = `generated/${effectiveUserId}/${Date.now()}.webp`;
+                const { error: uploadError } = await supabase.storage
+                  .from("analysis-images")
+                  .upload(fileName, imageBytes, {
+                    contentType: "image/webp",
+                  });
+
+                if (!uploadError) {
+                  // Create signed URL
+                  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                    .from("analysis-images")
+                    .createSignedUrl(fileName, 60 * 60 * 24 * 7); // 7 days expiry
+                  
+                  if (!signedUrlError && signedUrlData) {
+                    generatedImageUrl = signedUrlData.signedUrl;
+                    console.log("Generated image uploaded with signed URL");
+                  } else {
+                    console.error("Signed URL error:", signedUrlError);
+                  }
+                } else {
+                  console.error("Upload error:", uploadError);
+                }
+              } else {
+                console.error("Failed to download generated image:", imageResponse.status);
+              }
+            }
+          } else {
+            console.error("Replicate prediction failed or no output:", prediction.status, prediction.error);
+          }
         }
+      } catch (imageError) {
+        console.error("Image generation error:", imageError);
       }
-    } catch (imageError) {
-      console.error("Image generation error:", imageError);
     }
 
     const result = {
