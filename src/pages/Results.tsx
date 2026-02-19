@@ -32,6 +32,12 @@ const Results = () => {
   const [isFavorite, setIsFavorite] = useState(false);
   const [user, setUser] = useState<any>(null);
 
+  // Hook must be called unconditionally (before any early return)
+  const { refreshedImageUrl, refreshedGeneratedUrl, loading: urlsLoading } = useRefreshSignedUrls(
+    analysis?.image_url || null,
+    analysis?.generated_image_url || null
+  );
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user);
@@ -163,12 +169,6 @@ const Results = () => {
   }
 
   const result: AnalysisResult = analysis?.analysis_result;
-
-  // Refresh signed URLs for the images
-  const { refreshedImageUrl, refreshedGeneratedUrl, loading: urlsLoading } = useRefreshSignedUrls(
-    analysis?.image_url || null,
-    analysis?.generated_image_url || null
-  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted to-background">
