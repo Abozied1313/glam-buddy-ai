@@ -123,7 +123,7 @@ serve(async (req) => {
   }
 
   try {
-    // SECURITY: Verify authentication
+    // SECURITY: Verify authentication (explicit validation for Lovable Cloud ES256 compatibility)
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       console.error("Missing authorization header");
@@ -133,12 +133,15 @@ serve(async (req) => {
       );
     }
 
+    const token = authHeader.replace("Bearer ", "");
+
     // Create client with user's auth token to verify identity
     const userSupabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { data: { user }, error: userError } = await userSupabase.auth.getUser();
+    // SECURITY: Must validate token explicitly when verify_jwt=false
+    const { data: { user }, error: userError } = await userSupabase.auth.getUser(token);
     if (userError || !user) {
       console.error("Invalid authentication:", userError?.message);
       return new Response(
