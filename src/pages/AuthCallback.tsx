@@ -32,17 +32,19 @@ const AuthCallback = () => {
         if (sessionError) throw sessionError;
 
         if (session) {
-          console.log("Session established successfully");
+          console.log("Session established successfully, navigating...");
           toast.success("تم تسجيل الدخول بنجاح!");
-          navigate("/analyze", { replace: true });
+          // Use replace to prevent user from navigating back to callback
+          return navigate("/analyze", { replace: true });
         } else {
-          console.log("No session found, listening for auth state change...");
+          console.log("No session yet, listening for auth state change...");
           const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             console.log("Auth event:", event);
             if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
+              console.log("Auth event received:", event, "Session found, navigating...");
               toast.success("تم تسجيل الدخول بنجاح!");
               subscription.unsubscribe();
-              navigate("/analyze", { replace: true });
+              return navigate("/analyze", { replace: true });
             }
           });
 
