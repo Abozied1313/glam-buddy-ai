@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
 import { ArrowRight, Mail, Loader2 } from "lucide-react";
@@ -31,11 +30,15 @@ const Auth = () => {
       q.get("error_description") || hashParams.get("error_description");
 
     if (oauthError) {
-      toast.error(
-        oauthErrorDescription
-          ? decodeURIComponent(oauthErrorDescription)
-          : `فشل تسجيل الدخول عبر Google: ${oauthError}`
-      );
+      let errorMessage = "حدث خطأ أثناء إعداد الاتصال، يرجى المحاولة لاحقاً.";
+
+      if (oauthError === "access_denied" || oauthErrorDescription?.includes("denied")) {
+        errorMessage = "عذراً، ليس لديك صلاحية الوصول.";
+      } else if (oauthErrorDescription) {
+        errorMessage = decodeURIComponent(oauthErrorDescription);
+      }
+
+      toast.error(errorMessage);
     }
 
     // Redirect if user is already logged in (OAuth users may not rely on email confirmation flag)
@@ -106,15 +109,29 @@ const Auth = () => {
   };
 
   const handleGoogleLogin = async () => {
-    setLoading(true);
     try {
-      const { error } = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin,
+      setLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
       });
 
-      if (error) throw error;
+      if (error) {
+        if (error.status === 403) {
+          throw new Error("عذراً، ليس لديك صلاحية الوصول.");
+        }
+        throw new Error("حدث خطأ أثناء إعداد الاتصال، يرجى المحاولة لاحقاً.");
+      }
     } catch (error: any) {
-      toast.error(error?.message || "حدث خطأ في تسجيل الدخول عبر Google");
+      console.error("Auth Error:", error.message);
+      toast.error(error.message || "حدث خطأ في تسجيل الدخول عبر Google");
+    } finally {
       setLoading(false);
     }
   };
