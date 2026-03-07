@@ -41,22 +41,12 @@ const Auth = () => {
       toast.error(errorMessage);
     }
 
-    // Redirect if user is already logged in (OAuth users may not rely on email confirmation flag)
+    // Check if user is already logged in
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         navigate("/analyze");
       }
     });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session?.user) {
-        navigate("/analyze");
-      }
-    });
-
-    return () => subscription.unsubscribe();
   }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
