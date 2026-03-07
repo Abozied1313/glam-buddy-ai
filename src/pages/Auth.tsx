@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
 import { ArrowRight, Mail, Loader2 } from "lucide-react";
@@ -31,29 +30,23 @@ const Auth = () => {
       q.get("error_description") || hashParams.get("error_description");
 
     if (oauthError) {
-      toast.error(
-        oauthErrorDescription
-          ? decodeURIComponent(oauthErrorDescription)
-          : `فشل تسجيل الدخول عبر Google: ${oauthError}`
-      );
+      let errorMessage = "حدث خطأ أثناء إعداد الاتصال، يرجى المحاولة لاحقاً.";
+
+      if (oauthError === "access_denied" || oauthErrorDescription?.includes("denied")) {
+        errorMessage = "عذراً، ليس لديك صلاحية الوصول.";
+      } else if (oauthErrorDescription) {
+        errorMessage = decodeURIComponent(oauthErrorDescription);
+      }
+
+      toast.error(errorMessage);
     }
 
-    // Redirect if user is already logged in (OAuth users may not rely on email confirmation flag)
+    // Check if user is already logged in
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         navigate("/analyze");
       }
     });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session?.user) {
-        navigate("/analyze");
-      }
-    });
-
-    return () => subscription.unsubscribe();
   }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -105,16 +98,32 @@ const Auth = () => {
     }
   };
 
-  const handleGoogleLogin = async () => {
-    setLoading(true);
+  const handleGoogleLogin = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
     try {
-      const { error } = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin,
+      setLoading(true);
+      console.log("Starting Google OAuth flow...");
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
       });
 
-      if (error) throw error;
+      if (error) {
+        if (error.status === 403) {
+          throw new Error("عذراً، ليس لديك صلاحية الوصول.");
+        }
+        throw new Error("حدث خطأ أثناء إعداد الاتصال، يرجى المحاولة لاحقاً.");
+      }
     } catch (error: any) {
-      toast.error(error?.message || "حدث خطأ في تسجيل الدخول عبر Google");
+      console.error("Auth Error:", error.message);
+      toast.error(error.message || "حدث خطأ في تسجيل الدخول عبر Google");
+    } finally {
       setLoading(false);
     }
   };
@@ -233,6 +242,7 @@ const Auth = () => {
                   className="w-full"
                   onClick={handleGoogleLogin}
                   disabled={loading}
+                  type="button"
                 >
                   <svg className="w-5 h-5 ml-2" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
