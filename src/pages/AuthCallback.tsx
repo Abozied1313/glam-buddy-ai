@@ -10,31 +10,48 @@ const AuthCallback = () => {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        // Supabase automatically handles the hash/query params and sets the session
-        const { data, error } = await supabase.auth.getSession();
+        // Handle PKCE code exchange if present
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get("code");
+        const error = params.get("error");
+        const error_description = params.get("error_description");
 
-        if (error) throw error;
+        if (error) {
+          throw new Error(error_description || error);
+        }
 
-        if (data.session) {
+        if (code) {
+          console.log("Exchanging code for session...");
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          if (exchangeError) throw exchangeError;
+        }
+
+        // Supabase handles hash fragments automatically, but we ensure we have a session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError) throw sessionError;
+
+        if (session) {
+          console.log("Session established successfully");
           toast.success("تم تسجيل الدخول بنجاح!");
-          navigate("/analyze");
+          navigate("/analyze", { replace: true });
         } else {
-          // If no session is found yet, we might be in the middle of a redirect or
-          // there might be an error in the URL that hasn't been processed.
-          // We'll wait for onAuthStateChange to pick it up or timeout.
+          console.log("No session found, listening for auth state change...");
           const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            if (event === "SIGNED_IN" && session) {
+            console.log("Auth event:", event);
+            if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
               toast.success("تم تسجيل الدخول بنجاح!");
               subscription.unsubscribe();
-              navigate("/analyze");
+              navigate("/analyze", { replace: true });
             }
           });
 
           // Fallback timeout
           const timer = setTimeout(() => {
             subscription.unsubscribe();
-            navigate("/auth");
-          }, 5000);
+            console.log("Auth callback timed out");
+            navigate("/auth", { replace: true });
+          }, 10000);
 
           return () => {
             subscription.unsubscribe();
@@ -42,9 +59,9 @@ const AuthCallback = () => {
           };
         }
       } catch (error: any) {
-        console.error("Error during auth callback:", error);
-        toast.error("حدث خطأ أثناء إتمام عملية تسجيل الدخول");
-        navigate("/auth");
+        console.error("Error during auth callback:", error.message);
+        toast.error(error.message || "حدث خطأ أثناء إتمام عملية تسجيل الدخول");
+        navigate("/auth", { replace: true });
       }
     };
 
