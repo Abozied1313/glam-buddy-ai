@@ -1,4 +1,5 @@
 import { Suspense, lazy } from "react";
+import AuthCallback from "./pages/AuthCallback";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -32,11 +33,11 @@ const App = () => (
       <BrowserRouter>
         <Suspense fallback={<PageLoader />}>
           <Routes>
+            {/* OAuth callback must be handled first and outside any protection */}
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/" element={<Home />} />
             <Route path="/features" element={<Features />} />
             <Route path="/auth" element={<Auth />} />
-            {/* OAuth providers may redirect back to a callback path; render Auth to finalize session */}
-            <Route path="/auth/callback" element={<Auth />} />
             <Route path="/analyze" element={<Analyze />} />
             <Route path="/results/:id" element={<Results />} />
             <Route path="/favorites" element={<Favorites />} />
