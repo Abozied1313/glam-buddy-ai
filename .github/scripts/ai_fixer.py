@@ -1,6 +1,6 @@
 import os
 import subprocess
-import google.generativeai as genai
+import google.genai as genai
 from github import Github
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
@@ -12,8 +12,8 @@ COMMIT_SHA     = os.environ["COMMIT_SHA"]
 TARGET_EXTENSIONS = [".py", ".js", ".ts", ".dart", ".json"]
 MAX_FILE_KB = 50
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 def get_changed_files():
     all_files = []
@@ -49,7 +49,7 @@ def fix_file_with_ai(filepath: str):
 {content}
 """
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
         result = response.text.strip()
         if "NO_CHANGES_NEEDED" in result:
             return None
