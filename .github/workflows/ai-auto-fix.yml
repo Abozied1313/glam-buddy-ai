@@ -1,0 +1,61 @@
+name: AI Auto-Fix Agent
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # تشغيل يدوي من GitHub UI
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  ai-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - - name: Install dependencies
+  run: pip install -r requirements.txt
+
+
+      - name: Run AI Fixer
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.repository }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          python .github/scripts/ai_fixer.py
+
+      - name: Check if fixes were made
+        id: check_changes
+        run: |
+          if git diff --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit & Push Fixes
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git config --global user.name "AI Fix Bot"
+          git config --global user.email "ai-bot@github-actions"
+          git add -A
+          git commit -m "🤖 AI Auto-Fix: تصحيح تلقائي [skip ci]"
+          git push origin ${{ github.ref_name }}

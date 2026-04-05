@@ -1,0 +1,259 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 270 5% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 270 5% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 270 5% 15%;
+
+    /* Luxurious Purple/Violet as primary */
+    --primary: 270 60% 50%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 270 80% 70%;
+
+    /* Rose Gold as secondary */
+    --secondary: 340 60% 70%;
+    --secondary-foreground: 270 5% 15%;
+
+    --muted: 270 10% 96%;
+    --muted-foreground: 270 5% 45%;
+
+    --accent: 340 80% 85%;
+    --accent-foreground: 270 5% 15%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 270 15% 90%;
+    --input: 270 15% 90%;
+    --ring: 270 60% 50%;
+
+    --radius: 1rem;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(270, 60%, 50%) 0%, hsl(290, 70%, 60%) 100%);
+    --gradient-secondary: linear-gradient(135deg, hsl(340, 60%, 70%) 0%, hsl(320, 70%, 75%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(270, 60%, 50%) 0%, hsl(290, 70%, 60%) 50%, hsl(340, 60%, 70%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0, 0%, 100%) 0%, hsl(270, 20%, 98%) 100%);
+
+    /* Shadows */
+    --shadow-elegant: 0 20px 60px -20px hsl(270, 60%, 50% / 0.3);
+    --shadow-card: 0 10px 40px -10px hsl(270, 60%, 50% / 0.15);
+    --shadow-glow: 0 0 60px hsl(270, 80%, 70% / 0.4);
+
+    /* Animations */
+    --transition-smooth: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 270 20% 10%;
+    --foreground: 0 0% 95%;
+
+    --card: 270 20% 12%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 270 20% 12%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 270 70% 60%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 270 80% 75%;
+
+    --secondary: 340 60% 65%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 270 15% 20%;
+    --muted-foreground: 270 5% 65%;
+
+    --accent: 340 70% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 270 15% 25%;
+    --input: 270 15% 25%;
+    --ring: 270 70% 60%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(270, 70%, 60%) 0%, hsl(290, 75%, 65%) 100%);
+    --gradient-secondary: linear-gradient(135deg, hsl(340, 60%, 65%) 0%, hsl(320, 70%, 70%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(270, 70%, 60%) 0%, hsl(290, 75%, 65%) 50%, hsl(340, 60%, 65%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(270, 20%, 12%) 0%, hsl(270, 25%, 15%) 100%);
+
+    --shadow-elegant: 0 20px 60px -20px hsl(270, 70%, 60% / 0.5);
+    --shadow-card: 0 10px 40px -10px hsl(270, 70%, 60% / 0.25);
+    --shadow-glow: 0 0 80px hsl(270, 80%, 75% / 0.6);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold;
+  }
+
+  .gradient-text {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .gradient-hero-bg {
+    background: var(--gradient-hero);
+  }
+
+  .gradient-card-bg {
+    background: var(--gradient-card);
+  }
+
+  .shadow-elegant {
+    box-shadow: var(--shadow-elegant);
+  }
+
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+}
+
+@layer utilities {
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.6s ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.6s ease-out;
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-20px);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+
+/* Additional Animations */
+@layer utilities {
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .animate-shimmer {
+    animation: shimmer 3s ease-in-out infinite;
+  }
+
+  .animate-scale-in {
+    animation: scale-in 0.5s ease-out;
+  }
+
+  .animate-bounce-in {
+    animation: bounce-in 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow: 0 0 20px hsl(270, 60%, 50% / 0.5);
+    }
+    50% {
+      box-shadow: 0 0 40px hsl(270, 60%, 50% / 0.8);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -1000px 0;
+    }
+    100% {
+      background-position: 1000px 0;
+    }
+  }
+
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes bounce-in {
+    0% {
+      opacity: 0;
+      transform: scale(0.3);
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  /* Smooth transitions */
+  .transition-smooth {
+    @apply transition-all duration-300 ease-out;
+  }
+
+  .transition-smooth-lg {
+    @apply transition-all duration-500 ease-out;
+  }
+
+  /* Hover effects */
+  .hover-lift {
+    @apply hover:shadow-lg hover:scale-105 transition-all duration-300;
+  }
+
+  .hover-glow {
+    @apply hover:shadow-glow transition-all duration-300;
+  }
+}
