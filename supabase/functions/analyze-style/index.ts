@@ -184,21 +184,29 @@ serve(async (req) => {
     // Create service role client for database operations
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Fetch and encode image to base64
-    const imageResponse = await fetch(imageUrl, {
-      signal: AbortSignal.timeout(30000), // 30 second timeout
-    });
-    
-    if (!imageResponse.ok) {
-      throw new Error("Failed to fetch image");
+    // Download image from private bucket using service role client
+    // Extract the storage path from the URL
+    const storagePathMatch = imageUrl.match(/analysis-images\/(.+?)(\?|$)/);
+    if (!storagePathMatch) {
+      throw new Error("Invalid image URL format");
     }
-    
-    const contentLength = imageResponse.headers.get("content-length");
-    if (contentLength && parseInt(contentLength) > 10 * 1024 * 1024) {
+    const storagePath = decodeURIComponent(storagePathMatch[1]);
+    console.log("Downloading image from storage path:", storagePath);
+
+    const { data: imageData, error: downloadError } = await supabase.storage
+      .from("analysis-images")
+      .download(storagePath);
+
+    if (downloadError || !imageData) {
+      console.error("Storage download error:", downloadError?.message);
+      throw new Error("Failed to fetch image from storage");
+    }
+
+    if (imageData.size > 10 * 1024 * 1024) {
       throw new Error("Image too large: maximum 10MB allowed");
     }
 
-    const imageBuffer = await imageResponse.arrayBuffer();
+    const imageBuffer = await imageData.arrayBuffer();
     const uint8Array = new Uint8Array(imageBuffer);
     const chunkSize = 8192;
     let binaryString = "";
@@ -207,7 +215,7 @@ serve(async (req) => {
       binaryString += String.fromCharCode(...chunk);
     }
     const base64Image = btoa(binaryString);
-    const mimeType = imageResponse.headers.get("content-type") || "image/jpeg";
+    const mimeType = imageData.type || "image/jpeg";
 
     // Step 1: Get style analysis from Lovable AI
     const occasionLabels: Record<string, string> = {
