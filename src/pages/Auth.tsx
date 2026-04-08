@@ -4,10 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
-import { ArrowRight, Mail, Loader2 } from "lucide-react";
+import { ArrowRight, Mail, Loader2, Phone } from "lucide-react";
+import PhoneLogin from "@/components/Auth/PhoneLogin";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -19,7 +22,6 @@ const Auth = () => {
   const [emailSent, setEmailSent] = useState(false);
 
   useEffect(() => {
-    // Check for OAuth errors in URL (both query params and hash)
     const url = new URL(window.location.href);
     const hashParams = new URLSearchParams((url.hash || "").replace(/^#/, ""));
     const q = url.searchParams;
@@ -30,17 +32,14 @@ const Auth = () => {
 
     if (oauthError) {
       let errorMessage = "حدث خطأ أثناء إعداد الاتصال، يرجى المحاولة لاحقاً.";
-
       if (oauthError === "access_denied" || oauthErrorDescription?.includes("denied")) {
         errorMessage = "عذراً، ليس لديك صلاحية الوصول.";
       } else if (oauthErrorDescription) {
         errorMessage = decodeURIComponent(oauthErrorDescription);
       }
-
       toast.error(errorMessage);
     }
 
-    // Listen for auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
@@ -49,7 +48,6 @@ const Auth = () => {
       }
     });
 
-    // Check if user is already logged in
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         navigate("/analyze", { replace: true });
@@ -65,10 +63,7 @@ const Auth = () => {
 
     try {
       if (isLogin) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
 
         if (!data.user?.email_confirmed_at) {
@@ -80,16 +75,12 @@ const Auth = () => {
         toast.success("تم تسجيل الدخول بنجاح!");
         navigate("/analyze", { replace: true });
       } else {
-        const redirectUrl = `${window.location.origin}/auth/callback`;
-
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: {
-              full_name: fullName,
-            },
-            emailRedirectTo: redirectUrl,
+            data: { full_name: fullName },
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
           },
         });
         if (error) throw error;
@@ -108,25 +99,15 @@ const Auth = () => {
     }
   };
 
-  // FIXED: Use Supabase directly instead of lovable wrapper
   const handleGoogleLogin = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
     try {
       setLoading(true);
-      // Use /auth/callback for OAuth redirect - this is the dedicated callback handler
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: {
-            access_type: "offline",
-            prompt: "consent",
-          },
-        },
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: window.location.origin,
       });
-
-      if (error) throw error;
-      // Browser will redirect to /auth/callback after successful Google login
+      if (result.error) throw result.error;
+      if (result.redirected) return;
     } catch (error: any) {
       console.error("Google Auth Error:", error?.message || error);
       toast.error(error?.message || "حدث خطأ في تسجيل الدخول عبر Google");
@@ -134,53 +115,18 @@ const Auth = () => {
     }
   };
 
-  const handleFacebookLogin = async (e?: React.MouseEvent) => {
+  const handleAppleLogin = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
     try {
       setLoading(true);
-      console.log("Starting Facebook OAuth flow...");
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "facebook",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
+      const result = await lovable.auth.signInWithOAuth("apple", {
+        redirect_uri: window.location.origin,
       });
-
-      if (error) {
-        if (error.status === 403) {
-          throw new Error("عذراً، ليس لديك صلاحية الوصول.");
-        }
-        throw new Error("حدث خطأ أثناء إعداد الاتصال، يرجى المحاولة لاحقاً.");
-      }
+      if (result.error) throw result.error;
+      if (result.redirected) return;
     } catch (error: any) {
-      console.error("Facebook Auth Error:", error.message);
-      toast.error(error.message || "حدث خطأ في تسجيل الدخول عبر Facebook");
-      setLoading(false);
-    }
-  };
-
-  const handleMicrosoftLogin = async (e?: React.MouseEvent) => {
-    if (e) e.preventDefault();
-    try {
-      setLoading(true);
-      console.log("Starting Microsoft OAuth flow...");
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "azure",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          scopes: "openid profile email",
-        },
-      });
-
-      if (error) {
-        if (error.status === 403) {
-          throw new Error("عذراً، ليس لديك صلاحية الوصول.");
-        }
-        throw new Error("حدث خطأ أثناء إعداد الاتصال، يرجى المحاولة لاحقاً.");
-      }
-    } catch (error: any) {
-      console.error("Microsoft Auth Error:", error.message);
-      toast.error(error.message || "حدث خطأ في تسجيل الدخول عبر Microsoft");
+      console.error("Apple Auth Error:", error?.message || error);
+      toast.error(error?.message || "حدث خطأ في تسجيل الدخول عبر Apple");
       setLoading(false);
     }
   };
@@ -191,9 +137,7 @@ const Auth = () => {
       const { error } = await supabase.auth.resend({
         type: "signup",
         email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
       });
       if (error) throw error;
       toast.success("تم إعادة إرسال رابط التأكيد");
@@ -210,15 +154,10 @@ const Auth = () => {
         <Navbar />
         <div className="container mx-auto px-4 pt-24 pb-12">
           <div className="max-w-md mx-auto">
-            <Button
-              variant="ghost"
-              onClick={() => navigate("/")}
-              className="mb-4"
-            >
+            <Button variant="ghost" onClick={() => navigate("/")} className="mb-4">
               <ArrowRight className="w-4 h-4 ml-2" />
               العودة للرئيسية
             </Button>
-            
             <Card className="shadow-elegant border-border/50 text-center">
               <CardHeader>
                 <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
@@ -235,23 +174,11 @@ const Auth = () => {
                 <p className="text-muted-foreground text-sm">
                   يرجى النقر على الرابط في البريد الإلكتروني لتأكيد حسابك والبدء في استخدام التطبيق
                 </p>
-                <Button
-                  variant="outline"
-                  onClick={resendConfirmation}
-                  disabled={loading}
-                  className="w-full"
-                >
+                <Button variant="outline" onClick={resendConfirmation} disabled={loading} className="w-full">
                   {loading ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : null}
                   إعادة إرسال رابط التأكيد
                 </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setEmailSent(false);
-                    setIsLogin(true);
-                  }}
-                  className="w-full"
-                >
+                <Button variant="ghost" onClick={() => { setEmailSent(false); setIsLogin(true); }} className="w-full">
                   العودة لتسجيل الدخول
                 </Button>
               </CardContent>
@@ -267,11 +194,7 @@ const Auth = () => {
       <Navbar />
       <div className="container mx-auto px-4 pt-24 pb-12">
         <div className="max-w-md mx-auto">
-          <Button
-            variant="ghost"
-            onClick={() => navigate("/")}
-            className="mb-4"
-          >
+          <Button variant="ghost" onClick={() => navigate("/")} className="mb-4">
             <ArrowRight className="w-4 h-4 ml-2" />
             العودة للرئيسية
           </Button>
@@ -290,14 +213,7 @@ const Auth = () => {
             <CardContent>
               {/* Social Login Buttons */}
               <div className="space-y-3 mb-6">
-
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleGoogleLogin}
-                  disabled={loading}
-                  type="button"
-                >
+                <Button variant="outline" className="w-full" onClick={handleGoogleLogin} disabled={loading} type="button">
                   <svg className="w-5 h-5 ml-2" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                     <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -307,33 +223,11 @@ const Auth = () => {
                   المتابعة مع Google
                 </Button>
 
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleMicrosoftLogin}
-                  disabled={loading}
-                  type="button"
-                >
-                  <svg className="w-5 h-5 ml-2" viewBox="0 0 24 24">
-                    <path fill="#F25022" d="M1 1h10v10H1z"/>
-                    <path fill="#00A4EF" d="M1 13h10v10H1z"/>
-                    <path fill="#7FBA00" d="M13 1h10v10H13z"/>
-                    <path fill="#FFB900" d="M13 13h10v10H13z"/>
+                <Button variant="outline" className="w-full" onClick={handleAppleLogin} disabled={loading} type="button">
+                  <svg className="w-5 h-5 ml-2" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
                   </svg>
-                  المتابعة مع Microsoft
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleFacebookLogin}
-                  disabled={loading}
-                  type="button"
-                >
-                  <svg className="w-5 h-5 ml-2" viewBox="0 0 24 24" fill="#1877F2">
-                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                  </svg>
-                  المتابعة مع Facebook
+                  المتابعة مع Apple
                 </Button>
               </div>
 
@@ -346,75 +240,57 @@ const Auth = () => {
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {!isLogin && (
-                  <div className="space-y-2">
-                    <Label htmlFor="fullName">الاسم الكامل</Label>
-                    <Input
-                      id="fullName"
-                      type="text"
-                      placeholder="أدخل اسمك الكامل"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      required
-                      dir="rtl"
-                    />
+              <Tabs defaultValue="email" dir="rtl" className="w-full">
+                <TabsList className="grid w-full grid-cols-2 mb-4">
+                  <TabsTrigger value="email" className="flex items-center gap-2">
+                    <Mail className="w-4 h-4" />
+                    البريد الإلكتروني
+                  </TabsTrigger>
+                  <TabsTrigger value="phone" className="flex items-center gap-2">
+                    <Phone className="w-4 h-4" />
+                    رقم الهاتف
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="email">
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    {!isLogin && (
+                      <div className="space-y-2">
+                        <Label htmlFor="fullName">الاسم الكامل</Label>
+                        <Input id="fullName" type="text" placeholder="أدخل اسمك الكامل" value={fullName} onChange={(e) => setFullName(e.target.value)} required dir="rtl" />
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label htmlFor="email">البريد الإلكتروني</Label>
+                      <Input id="email" type="email" placeholder="example@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="password">كلمة المرور</Label>
+                      <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+                    </div>
+                    <Button type="submit" variant="hero" className="w-full" size="lg" disabled={loading}>
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                          جاري التحميل...
+                        </>
+                      ) : isLogin ? "تسجيل الدخول" : "إنشاء حساب"}
+                    </Button>
+                  </form>
+                  <div className="mt-4 text-center">
+                    <button type="button" onClick={() => setIsLogin(!isLogin)} className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                      {isLogin ? "ليس لديك حساب؟ " : "لديك حساب بالفعل؟ "}
+                      <span className="text-primary font-semibold">
+                        {isLogin ? "إنشاء حساب جديد" : "تسجيل الدخول"}
+                      </span>
+                    </button>
                   </div>
-                )}
-                <div className="space-y-2">
-                  <Label htmlFor="email">البريد الإلكتروني</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="example@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">كلمة المرور</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    minLength={6}
-                  />
-                </div>
-                <Button
-                  type="submit"
-                  variant="hero"
-                  className="w-full"
-                  size="lg"
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 ml-2 animate-spin" />
-                      جاري التحميل...
-                    </>
-                  ) : isLogin ? (
-                    "تسجيل الدخول"
-                  ) : (
-                    "إنشاء حساب"
-                  )}
-                </Button>
-              </form>
-              <div className="mt-4 text-center">
-                <button
-                  type="button"
-                  onClick={() => setIsLogin(!isLogin)}
-                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
-                >
-                  {isLogin ? "ليس لديك حساب؟ " : "لديك حساب بالفعل؟ "}
-                  <span className="text-primary font-semibold">
-                    {isLogin ? "إنشاء حساب جديد" : "تسجيل الدخول"}
-                  </span>
-                </button>
-              </div>
+                </TabsContent>
+
+                <TabsContent value="phone">
+                  <PhoneLogin />
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </div>
