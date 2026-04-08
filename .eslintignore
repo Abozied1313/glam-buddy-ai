@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.expo/
+.next/
+out/
+coverage/
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+agentsmith/
+src/components/ui/
+src/integrations/lovable/
