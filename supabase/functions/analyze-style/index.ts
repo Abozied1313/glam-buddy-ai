@@ -313,14 +313,16 @@ serve(async (req) => {
 
     let stylePrompt = "";
 
+    // FLUX Kontext Pro is an image-EDITING model that preserves the input identity
+    // and only modifies what we instruct (the outfit, hair, hijab, makeup).
     if (gender === "male") {
-      stylePrompt = `A photorealistic professional fashion portrait of the same person in the reference image. Hair styled as ${hairstyleDescription}. Wearing ${outfitDescriptions || "elegant modern outfit tailored to body type"}. Same face, same person, same identity. High quality fashion magazine photography, studio lighting, clean background, 8K resolution, photorealistic, natural skin tone. Do not change the face or facial features, only change the outfit and hairstyle.`;
+      stylePrompt = `Keep the exact same person, same face, same facial features, same skin tone, same body, and same pose from the input image. Only change their outfit and hairstyle. New hairstyle: ${hairstyleDescription}. New outfit: ${outfitDescriptions || "elegant modern outfit"}. Studio lighting, clean background, professional fashion photography, photorealistic, 8K. Do NOT alter the face in any way.`;
     } else {
       const hasHijab = hijabDetails && hijabDetails.length > 0;
       if (hasHijab) {
-        stylePrompt = `A photorealistic professional fashion portrait of the same woman in the reference image wearing hijab. Hijab: ${hijabDetails}. ${makeupDetails ? `Makeup: ${makeupDetails}.` : ""} Wearing ${outfitDescriptions || "sophisticated modest fashion tailored to body type"}. Same face, same person, same identity. High quality fashion magazine photography, studio lighting, clean background, 8K resolution, photorealistic. Do not change the face or facial features, only change the outfit, makeup and hijab style.`;
+        stylePrompt = `Keep the exact same woman, same face, same facial features, same skin tone, and same pose from the input image. Only change her hijab style, makeup, and outfit. New hijab: ${hijabDetails}. ${makeupDetails ? `New makeup: ${makeupDetails}. ` : ""}New outfit: ${outfitDescriptions || "sophisticated modest fashion"}. Studio lighting, clean background, professional fashion photography, photorealistic, 8K. Do NOT alter the face in any way.`;
       } else {
-        stylePrompt = `A photorealistic professional fashion portrait of the same woman in the reference image. Hairstyle: ${hairstyleDescription}. ${makeupDetails ? `Makeup: ${makeupDetails}.` : ""} Wearing ${outfitDescriptions || "trendy modern clothing tailored to body type"}. Same face, same person, same identity. High quality fashion magazine photography, studio lighting, clean background, 8K resolution, photorealistic. Do not change the face or facial features, only change the outfit and hairstyle.`;
+        stylePrompt = `Keep the exact same woman, same face, same facial features, same skin tone, and same pose from the input image. Only change her hairstyle, makeup, and outfit. New hairstyle: ${hairstyleDescription}. ${makeupDetails ? `New makeup: ${makeupDetails}. ` : ""}New outfit: ${outfitDescriptions || "trendy modern clothing"}. Studio lighting, clean background, professional fashion photography, photorealistic, 8K. Do NOT alter the face in any way.`;
       }
     }
 
@@ -330,9 +332,9 @@ serve(async (req) => {
       console.error("REPLICATE_API_TOKEN is not configured");
     } else {
       try {
-        // Use FLUX 1.1 Pro with image_prompt for face-preserving generation
-        // Enhanced parameters for better face preservation and outfit generation
-        const replicateResponse = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-1.1-pro/predictions", {
+        // Use FLUX Kontext Pro: an image-editing model that preserves identity
+        // and changes only what the prompt asks (outfit, hair, makeup, hijab).
+        const replicateResponse = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
@@ -342,14 +344,10 @@ serve(async (req) => {
           body: JSON.stringify({
             input: {
               prompt: stylePrompt,
-              image_prompt: `data:${mimeType};base64,${base64Image}`,
-              image_prompt_strength: 0.85, // Increased from 0.75 for better face preservation
-              aspect_ratio: "3:4",
+              input_image: `data:${mimeType};base64,${base64Image}`,
+              aspect_ratio: "match_input_image",
               output_format: "webp",
-              output_quality: 95, // Increased from 90 for better quality
               safety_tolerance: 2,
-              num_inference_steps: 50, // More steps for better quality
-              guidance_scale: 7.5, // Better adherence to prompt
             },
           }),
         });
