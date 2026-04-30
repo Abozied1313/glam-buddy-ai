@@ -296,7 +296,7 @@ serve(async (req) => {
     // Step 2: Generate image using Replicate (FLUX model)
     let generatedImageUrl = null;
 
-    console.log("Generating face-preserving image with FLUX 1.1 Pro...");
+    console.log("Generating face-preserving image with FLUX Kontext Pro...");
 
     // Build dynamic prompt based on gender and analysis
     const outfitDetails = analysisResult.توصيات_الملابس_والأطقم || [];
@@ -346,7 +346,7 @@ serve(async (req) => {
               prompt: stylePrompt,
               input_image: `data:${mimeType};base64,${base64Image}`,
               aspect_ratio: "match_input_image",
-              output_format: "webp",
+              output_format: "jpg",
               safety_tolerance: 2,
             },
           }),
@@ -392,11 +392,11 @@ serve(async (req) => {
                 const imageBytes = new Uint8Array(arrayBuffer);
 
                 // Upload to storage
-                const fileName = `generated/${effectiveUserId}/${Date.now()}.webp`;
+                const fileName = `generated/${effectiveUserId}/${Date.now()}.jpg`;
                 const { error: uploadError } = await supabase.storage
                   .from("analysis-images")
                   .upload(fileName, imageBytes, {
-                    contentType: "image/webp",
+                    contentType: "image/jpeg",
                   });
 
                 if (!uploadError) {
