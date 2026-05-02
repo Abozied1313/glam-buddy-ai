@@ -12,7 +12,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const REPLICATE_MODEL = "black-forest-labs/flux-kontext-pro";
+const REPLICATE_MODEL_OWNER = "black-forest-labs";
+const REPLICATE_MODEL_NAME = "flux-kontext-pro";
+const REPLICATE_MODEL_PREDICTIONS_ENDPOINT = `https://api.replicate.com/v1/models/${REPLICATE_MODEL_OWNER}/${REPLICATE_MODEL_NAME}/predictions`;
 const REPLICATE_PREDICTIONS_ENDPOINT = "https://api.replicate.com/v1/predictions";
 const REPLICATE_TERMINAL_STATUSES = new Set(["succeeded", "failed", "canceled"]);
 
