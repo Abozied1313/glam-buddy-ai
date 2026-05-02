@@ -459,18 +459,23 @@ serve(async (req) => {
               console.log("Generated image received from Replicate, downloading...");
 
               // Download the image
-              const imageResponse = await fetch(generatedImage, {
+              let imageResponse = await fetch(generatedImage, {
                 headers: { Authorization: `Bearer ${REPLICATE_API_TOKEN}` },
               });
+
+              if (!imageResponse.ok && imageResponse.status === 401) {
+                imageResponse = await fetch(generatedImage);
+              }
+
               if (imageResponse.ok) {
                 const arrayBuffer = await imageResponse.arrayBuffer();
-                const imageBytes = new Uint8Array(arrayBuffer);
+                const imageBlob = new Blob([arrayBuffer], { type: "image/jpeg" });
 
                 // Upload to storage
                 const fileName = `generated/${effectiveUserId}/${Date.now()}.jpg`;
                 const { error: uploadError } = await supabase.storage
                   .from("analysis-images")
-                  .upload(fileName, imageBytes, {
+                  .upload(fileName, imageBlob, {
                     contentType: "image/jpeg",
                   });
 
