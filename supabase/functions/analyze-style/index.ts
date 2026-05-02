@@ -518,6 +518,7 @@ serve(async (req) => {
     const result = {
       ...analysisResult,
       generated_image_url: generatedImageUrl,
+      image_generation_error: imageGenerationError,
     };
 
     console.log("Analysis complete");
