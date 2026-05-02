@@ -377,8 +377,8 @@ serve(async (req) => {
       };
     }
 
-    // Step 2: Generate image using Replicate (FLUX model)
-    let generatedImageUrl = null;
+    // Step 2: Generate image using Replicate (FLUX Kontext image editing model)
+    let generatedImageUrl: string | null = null;
 
     console.log("Generating face-preserving image with FLUX Kontext Pro...");
 
@@ -416,61 +416,41 @@ serve(async (req) => {
       console.error("REPLICATE_API_TOKEN is not configured");
     } else {
       try {
-        // Use FLUX Kontext Pro: an image-editing model that preserves identity
-        // and changes only what the prompt asks (outfit, hair, makeup, hijab).
-        const replicateResponse = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions", {
+        // Use the generic predictions endpoint with the official model identifier.
+        // This avoids model-endpoint/version mismatches and gives us a stable polling URL.
+        const replicateResponse = await fetch(REPLICATE_PREDICTIONS_ENDPOINT, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
             "Content-Type": "application/json",
-            "Prefer": "wait",
+            "Prefer": "wait=60",
+            "Cancel-After": "120s",
           },
           body: JSON.stringify({
+            version: REPLICATE_MODEL,
             input: {
               prompt: stylePrompt,
-              input_image: `data:${mimeType};base64,${base64Image}`,
-              aspect_ratio: "match_input_image",
+              input_image: imageUrl,
               output_format: "jpg",
-              safety_tolerance: 2,
             },
           }),
         });
 
-        if (!replicateResponse.ok) {
-          const errorText = await replicateResponse.text();
-          console.error("Replicate API error:", replicateResponse.status, errorText);
-        } else {
-          let prediction = await replicateResponse.json();
+        let prediction = await readReplicateJson(replicateResponse, "Replicate prediction creation");
           console.log("Replicate prediction status:", prediction.status);
 
-          // If still processing, poll for completion
-          if (prediction.status === "starting" || prediction.status === "processing") {
-            let attempts = 0;
-            const maxAttempts = 30; // 30 seconds max wait
-            
-            while (prediction.status !== "succeeded" && prediction.status !== "failed" && attempts < maxAttempts) {
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              
-              const pollResponse = await fetch(prediction.urls.get, {
-                headers: {
-                  "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
-                },
-              });
-              
-              prediction = await pollResponse.json();
-              attempts++;
-              console.log(`Poll attempt ${attempts}: ${prediction.status}`);
-            }
-          }
+          prediction = await pollReplicatePrediction(prediction);
 
           if (prediction.status === "succeeded" && prediction.output) {
-            const generatedImage = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+            const generatedImage = extractReplicateImageUrl(prediction.output);
             
-            if (generatedImage && generatedImage.startsWith("http")) {
+            if (generatedImage) {
               console.log("Generated image received from Replicate, downloading...");
 
               // Download the image
-              const imageResponse = await fetch(generatedImage);
+              const imageResponse = await fetch(generatedImage, {
+                headers: { Authorization: `Bearer ${REPLICATE_API_TOKEN}` },
+              });
               if (imageResponse.ok) {
                 const arrayBuffer = await imageResponse.arrayBuffer();
                 const imageBytes = new Uint8Array(arrayBuffer);
@@ -499,13 +479,15 @@ serve(async (req) => {
                   console.error("Upload error:", uploadError);
                 }
               } else {
-                console.error("Failed to download generated image:", imageResponse.status);
+                const downloadError = await imageResponse.text();
+                console.error("Failed to download generated image:", imageResponse.status, downloadError);
               }
+            } else {
+              console.error("Replicate succeeded but output URL could not be extracted:", prediction.output);
             }
           } else {
             console.error("Replicate prediction failed or no output:", prediction.status, prediction.error);
           }
-        }
       } catch (imageError) {
         console.error("Image generation error:", imageError);
       }
