@@ -12,6 +12,10 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+const REPLICATE_MODEL = "black-forest-labs/flux-kontext-pro";
+const REPLICATE_PREDICTIONS_ENDPOINT = "https://api.replicate.com/v1/predictions";
+const REPLICATE_TERMINAL_STATUSES = new Set(["succeeded", "failed", "canceled"]);
+
 // Allowed values for validation
 const ALLOWED_OCCASIONS = ["casual", "work", "formal", "party", "wedding", "sport"];
 const ALLOWED_GENDERS = ["male", "female"];
@@ -117,6 +121,86 @@ function validateInput(data: any): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
+function extractReplicateImageUrl(output: unknown): string | null {
+  if (!output) return null;
+
+  if (typeof output === "string") {
+    return output.startsWith("http") ? output : null;
+  }
+
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      const url = extractReplicateImageUrl(item);
+      if (url) return url;
+    }
+    return null;
+  }
+
+  if (typeof output === "object") {
+    const value = output as Record<string, unknown>;
+    return extractReplicateImageUrl(value.url ?? value.image ?? value.output);
+  }
+
+  return null;
+}
+
+async function readReplicateJson(response: Response, context: string) {
+  const responseText = await response.text();
+  let payload: any = null;
+
+  try {
+    payload = responseText ? JSON.parse(responseText) : null;
+  } catch (_error) {
+    console.error(`${context} returned non-JSON response:`, responseText);
+  }
+
+  if (!response.ok) {
+    console.error(`${context} failed:`, response.status, responseText);
+    throw new Error(`${context} failed`);
+  }
+
+  if (!payload) {
+    throw new Error(`${context} returned an empty response`);
+  }
+
+  return payload;
+}
+
+async function pollReplicatePrediction(initialPrediction: any) {
+  let prediction = initialPrediction;
+  const startedAt = Date.now();
+  const maxPollingMs = 90_000;
+
+  while (!REPLICATE_TERMINAL_STATUSES.has(prediction.status)) {
+    if (Date.now() - startedAt > maxPollingMs) {
+      console.error("Replicate polling timed out:", {
+        id: prediction.id,
+        status: prediction.status,
+        urls: prediction.urls,
+      });
+      throw new Error("Replicate image generation timed out");
+    }
+
+    const pollUrl = prediction.urls?.get || (prediction.id ? `${REPLICATE_PREDICTIONS_ENDPOINT}/${prediction.id}` : null);
+    if (!pollUrl) {
+      throw new Error("Replicate response did not include a polling URL");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    const pollResponse = await fetch(pollUrl, {
+      headers: {
+        Authorization: `Bearer ${REPLICATE_API_TOKEN}`,
+      },
+    });
+
+    prediction = await readReplicateJson(pollResponse, "Replicate polling");
+    console.log("Replicate poll status:", prediction.status);
+  }
+
+  return prediction;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -217,6 +301,17 @@ serve(async (req) => {
     const base64Image = btoa(binaryString);
     const mimeType = imageData.type || "image/jpeg";
 
+    const { data: replicateInputUrlData, error: replicateInputUrlError } = await supabase.storage
+      .from("analysis-images")
+      .createSignedUrl(storagePath, 60 * 60);
+
+    if (replicateInputUrlError || !replicateInputUrlData?.signedUrl) {
+      console.error("Replicate input signed URL error:", replicateInputUrlError?.message);
+      throw new Error("Failed to prepare image for generation");
+    }
+
+    const replicateInputImageUrl = replicateInputUrlData.signedUrl;
+
     // Step 1: Get style analysis from Lovable AI
     const occasionLabels: Record<string, string> = {
       casual: "يومي",
@@ -293,8 +388,8 @@ serve(async (req) => {
       };
     }
 
-    // Step 2: Generate image using Replicate (FLUX model)
-    let generatedImageUrl = null;
+    // Step 2: Generate image using Replicate (FLUX Kontext image editing model)
+    let generatedImageUrl: string | null = null;
 
     console.log("Generating face-preserving image with FLUX Kontext Pro...");
 
@@ -332,70 +427,55 @@ serve(async (req) => {
       console.error("REPLICATE_API_TOKEN is not configured");
     } else {
       try {
-        // Use FLUX Kontext Pro: an image-editing model that preserves identity
-        // and changes only what the prompt asks (outfit, hair, makeup, hijab).
-        const replicateResponse = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions", {
+        // Use the generic predictions endpoint with the official model identifier.
+        // This avoids model-endpoint/version mismatches and gives us a stable polling URL.
+        const replicateResponse = await fetch(REPLICATE_PREDICTIONS_ENDPOINT, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
             "Content-Type": "application/json",
-            "Prefer": "wait",
+            "Prefer": "wait=60",
+            "Cancel-After": "120s",
           },
           body: JSON.stringify({
+            version: REPLICATE_MODEL,
             input: {
               prompt: stylePrompt,
-              input_image: `data:${mimeType};base64,${base64Image}`,
-              aspect_ratio: "match_input_image",
+              input_image: replicateInputImageUrl,
               output_format: "jpg",
-              safety_tolerance: 2,
             },
           }),
         });
 
-        if (!replicateResponse.ok) {
-          const errorText = await replicateResponse.text();
-          console.error("Replicate API error:", replicateResponse.status, errorText);
-        } else {
-          let prediction = await replicateResponse.json();
+        let prediction = await readReplicateJson(replicateResponse, "Replicate prediction creation");
           console.log("Replicate prediction status:", prediction.status);
 
-          // If still processing, poll for completion
-          if (prediction.status === "starting" || prediction.status === "processing") {
-            let attempts = 0;
-            const maxAttempts = 30; // 30 seconds max wait
-            
-            while (prediction.status !== "succeeded" && prediction.status !== "failed" && attempts < maxAttempts) {
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              
-              const pollResponse = await fetch(prediction.urls.get, {
-                headers: {
-                  "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
-                },
-              });
-              
-              prediction = await pollResponse.json();
-              attempts++;
-              console.log(`Poll attempt ${attempts}: ${prediction.status}`);
-            }
-          }
+          prediction = await pollReplicatePrediction(prediction);
 
           if (prediction.status === "succeeded" && prediction.output) {
-            const generatedImage = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+            const generatedImage = extractReplicateImageUrl(prediction.output);
             
-            if (generatedImage && generatedImage.startsWith("http")) {
+            if (generatedImage) {
               console.log("Generated image received from Replicate, downloading...");
 
               // Download the image
-              const imageResponse = await fetch(generatedImage);
+              let imageResponse = await fetch(generatedImage, {
+                headers: { Authorization: `Bearer ${REPLICATE_API_TOKEN}` },
+              });
+
+              if (!imageResponse.ok && imageResponse.status === 401) {
+                imageResponse = await fetch(generatedImage);
+              }
+
               if (imageResponse.ok) {
                 const arrayBuffer = await imageResponse.arrayBuffer();
-                const imageBytes = new Uint8Array(arrayBuffer);
+                const imageBlob = new Blob([arrayBuffer], { type: "image/jpeg" });
 
                 // Upload to storage
                 const fileName = `generated/${effectiveUserId}/${Date.now()}.jpg`;
                 const { error: uploadError } = await supabase.storage
                   .from("analysis-images")
-                  .upload(fileName, imageBytes, {
+                  .upload(fileName, imageBlob, {
                     contentType: "image/jpeg",
                   });
 
@@ -415,13 +495,15 @@ serve(async (req) => {
                   console.error("Upload error:", uploadError);
                 }
               } else {
-                console.error("Failed to download generated image:", imageResponse.status);
+                const downloadError = await imageResponse.text();
+                console.error("Failed to download generated image:", imageResponse.status, downloadError);
               }
+            } else {
+              console.error("Replicate succeeded but output URL could not be extracted:", prediction.output);
             }
           } else {
             console.error("Replicate prediction failed or no output:", prediction.status, prediction.error);
           }
-        }
       } catch (imageError) {
         console.error("Image generation error:", imageError);
       }
