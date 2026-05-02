@@ -171,7 +171,8 @@ async function readReplicateJson(response: Response, context: string) {
 async function pollReplicatePrediction(initialPrediction: any) {
   let prediction = initialPrediction;
   const startedAt = Date.now();
-  const maxPollingMs = 90_000;
+  const maxPollingMs = 180_000; // 3 minutes — FLUX Kontext Pro can take >60s
+  const pollIntervalMs = 2000;
 
   while (!REPLICATE_TERMINAL_STATUSES.has(prediction.status)) {
     if (Date.now() - startedAt > maxPollingMs) {
@@ -180,7 +181,7 @@ async function pollReplicatePrediction(initialPrediction: any) {
         status: prediction.status,
         urls: prediction.urls,
       });
-      throw new Error("Replicate image generation timed out");
+      throw new Error("Replicate image generation timed out after 180s");
     }
 
     const pollUrl = prediction.urls?.get || (prediction.id ? `${REPLICATE_PREDICTIONS_ENDPOINT}/${prediction.id}` : null);
@@ -188,7 +189,7 @@ async function pollReplicatePrediction(initialPrediction: any) {
       throw new Error("Replicate response did not include a polling URL");
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
 
     const pollResponse = await fetch(pollUrl, {
       headers: {
@@ -197,7 +198,7 @@ async function pollReplicatePrediction(initialPrediction: any) {
     });
 
     prediction = await readReplicateJson(pollResponse, "Replicate polling");
-    console.log("Replicate poll status:", prediction.status);
+    console.log("Replicate poll status:", prediction.status, "elapsed:", Math.round((Date.now() - startedAt) / 1000) + "s");
   }
 
   return prediction;
