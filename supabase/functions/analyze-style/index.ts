@@ -301,6 +301,17 @@ serve(async (req) => {
     const base64Image = btoa(binaryString);
     const mimeType = imageData.type || "image/jpeg";
 
+    const { data: replicateInputUrlData, error: replicateInputUrlError } = await supabase.storage
+      .from("analysis-images")
+      .createSignedUrl(storagePath, 60 * 60);
+
+    if (replicateInputUrlError || !replicateInputUrlData?.signedUrl) {
+      console.error("Replicate input signed URL error:", replicateInputUrlError?.message);
+      throw new Error("Failed to prepare image for generation");
+    }
+
+    const replicateInputImageUrl = replicateInputUrlData.signedUrl;
+
     // Step 1: Get style analysis from Lovable AI
     const occasionLabels: Record<string, string> = {
       casual: "يومي",
@@ -430,7 +441,7 @@ serve(async (req) => {
             version: REPLICATE_MODEL,
             input: {
               prompt: stylePrompt,
-              input_image: imageUrl,
+              input_image: replicateInputImageUrl,
               output_format: "jpg",
             },
           }),
