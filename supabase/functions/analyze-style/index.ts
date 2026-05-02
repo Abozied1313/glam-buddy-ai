@@ -420,88 +420,99 @@ serve(async (req) => {
 
     if (!REPLICATE_API_TOKEN) {
       console.error("REPLICATE_API_TOKEN is not configured");
-    } else {
-      try {
-        // Use the generic predictions endpoint with the official model identifier.
-        // This avoids model-endpoint/version mismatches and gives us a stable polling URL.
-        const replicateResponse = await fetch(REPLICATE_PREDICTIONS_ENDPOINT, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
-            "Content-Type": "application/json",
-            "Prefer": "wait=60",
-            "Cancel-After": "120s",
+      return new Response(
+        JSON.stringify({
+          error: "خدمة توليد الصور غير مهيأة. يرجى إضافة REPLICATE_API_TOKEN.",
+        }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    let imageGenerationError: string | null = null;
+    try {
+      // Use the model-specific predictions endpoint for official models (no `version` needed).
+      console.log("Calling Replicate model endpoint:", REPLICATE_MODEL_PREDICTIONS_ENDPOINT);
+      const replicateResponse = await fetch(REPLICATE_MODEL_PREDICTIONS_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
+          "Content-Type": "application/json",
+          "Prefer": "wait=60",
+        },
+        body: JSON.stringify({
+          input: {
+            prompt: stylePrompt,
+            input_image: replicateInputImageUrl,
+            output_format: "jpg",
+            safety_tolerance: 2,
           },
-          body: JSON.stringify({
-            version: REPLICATE_MODEL,
-            input: {
-              prompt: stylePrompt,
-              input_image: replicateInputImageUrl,
-              output_format: "jpg",
-            },
-          }),
-        });
+        }),
+      });
 
-        let prediction = await readReplicateJson(replicateResponse, "Replicate prediction creation");
-          console.log("Replicate prediction status:", prediction.status);
+      let prediction = await readReplicateJson(replicateResponse, "Replicate prediction creation");
+      console.log("Replicate prediction created:", { id: prediction.id, status: prediction.status });
 
-          prediction = await pollReplicatePrediction(prediction);
+      prediction = await pollReplicatePrediction(prediction);
 
-          if (prediction.status === "succeeded" && prediction.output) {
-            const generatedImage = extractReplicateImageUrl(prediction.output);
-            
-            if (generatedImage) {
-              console.log("Generated image received from Replicate, downloading...");
+      if (prediction.status === "succeeded" && prediction.output) {
+        const generatedImage = extractReplicateImageUrl(prediction.output);
 
-              // Download the image
-              let imageResponse = await fetch(generatedImage, {
-                headers: { Authorization: `Bearer ${REPLICATE_API_TOKEN}` },
+        if (generatedImage) {
+          console.log("Generated image received from Replicate, downloading...");
+
+          // Download the image (Replicate output URLs are public, no auth needed)
+          let imageResponse = await fetch(generatedImage);
+
+          if (!imageResponse.ok) {
+            // Fallback with auth header just in case
+            imageResponse = await fetch(generatedImage, {
+              headers: { Authorization: `Bearer ${REPLICATE_API_TOKEN}` },
+            });
+          }
+
+          if (imageResponse.ok) {
+            const arrayBuffer = await imageResponse.arrayBuffer();
+            const imageBlob = new Blob([arrayBuffer], { type: "image/jpeg" });
+
+            const fileName = `generated/${effectiveUserId}/${Date.now()}.jpg`;
+            const { error: uploadError } = await supabase.storage
+              .from("analysis-images")
+              .upload(fileName, imageBlob, {
+                contentType: "image/jpeg",
               });
 
-              if (!imageResponse.ok && imageResponse.status === 401) {
-                imageResponse = await fetch(generatedImage);
-              }
+            if (!uploadError) {
+              const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                .from("analysis-images")
+                .createSignedUrl(fileName, 60 * 60 * 24 * 7);
 
-              if (imageResponse.ok) {
-                const arrayBuffer = await imageResponse.arrayBuffer();
-                const imageBlob = new Blob([arrayBuffer], { type: "image/jpeg" });
-
-                // Upload to storage
-                const fileName = `generated/${effectiveUserId}/${Date.now()}.jpg`;
-                const { error: uploadError } = await supabase.storage
-                  .from("analysis-images")
-                  .upload(fileName, imageBlob, {
-                    contentType: "image/jpeg",
-                  });
-
-                if (!uploadError) {
-                  // Create signed URL
-                  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-                    .from("analysis-images")
-                    .createSignedUrl(fileName, 60 * 60 * 24 * 7); // 7 days expiry
-                  
-                  if (!signedUrlError && signedUrlData) {
-                    generatedImageUrl = signedUrlData.signedUrl;
-                    console.log("Generated image uploaded with signed URL");
-                  } else {
-                    console.error("Signed URL error:", signedUrlError);
-                  }
-                } else {
-                  console.error("Upload error:", uploadError);
-                }
+              if (!signedUrlError && signedUrlData) {
+                generatedImageUrl = signedUrlData.signedUrl;
+                console.log("Generated image uploaded with signed URL");
               } else {
-                const downloadError = await imageResponse.text();
-                console.error("Failed to download generated image:", imageResponse.status, downloadError);
+                console.error("Signed URL error:", signedUrlError);
+                imageGenerationError = "Failed to create signed URL for generated image";
               }
             } else {
-              console.error("Replicate succeeded but output URL could not be extracted:", prediction.output);
+              console.error("Upload error:", uploadError);
+              imageGenerationError = "Failed to upload generated image to storage";
             }
           } else {
-            console.error("Replicate prediction failed or no output:", prediction.status, prediction.error);
+            const downloadErrorText = await imageResponse.text();
+            console.error("Failed to download generated image:", imageResponse.status, downloadErrorText);
+            imageGenerationError = `Failed to download generated image (${imageResponse.status})`;
           }
-      } catch (imageError) {
-        console.error("Image generation error:", imageError);
+        } else {
+          console.error("Replicate succeeded but output URL could not be extracted:", prediction.output);
+          imageGenerationError = "Could not extract image URL from Replicate response";
+        }
+      } else {
+        console.error("Replicate prediction failed:", prediction.status, prediction.error);
+        imageGenerationError = `Replicate ${prediction.status}: ${prediction.error || "unknown error"}`;
       }
+    } catch (imageError: any) {
+      console.error("Image generation error:", imageError);
+      imageGenerationError = imageError?.message || "Unknown image generation error";
     }
 
     const result = {
