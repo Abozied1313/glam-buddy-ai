@@ -210,6 +210,54 @@ async function verifyAnalysisOwnership(supabase: any, analysisId: string, userId
   return data;
 }
 
+async function saveReplicateOutputImage(supabase: any, effectiveUserId: string, output: unknown) {
+  const generatedImage = extractReplicateImageUrl(output);
+  if (!generatedImage) {
+    throw new Error("Could not extract image URL from Replicate response");
+  }
+
+  console.log("Generated image received from Replicate, downloading...");
+  let imageResponse = await fetch(generatedImage, {
+    headers: { Authorization: `Bearer ${REPLICATE_API_TOKEN}` },
+  });
+
+  if (!imageResponse.ok) {
+    imageResponse = await fetch(generatedImage);
+  }
+
+  if (!imageResponse.ok) {
+    const downloadErrorText = await imageResponse.text();
+    console.error("Failed to download generated image:", imageResponse.status, downloadErrorText);
+    throw new Error(`Failed to download generated image (${imageResponse.status})`);
+  }
+
+  const arrayBuffer = await imageResponse.arrayBuffer();
+  const imageBlob = new Blob([arrayBuffer], { type: "image/jpeg" });
+  const fileName = `generated/${effectiveUserId}/${Date.now()}.jpg`;
+  const { error: uploadError } = await supabase.storage
+    .from("analysis-images")
+    .upload(fileName, imageBlob, {
+      contentType: "image/jpeg",
+    });
+
+  if (uploadError) {
+    console.error("Upload error:", uploadError);
+    throw new Error("Failed to upload generated image to storage");
+  }
+
+  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+    .from("analysis-images")
+    .createSignedUrl(fileName, 60 * 60 * 24 * 7);
+
+  if (signedUrlError || !signedUrlData) {
+    console.error("Signed URL error:", signedUrlError);
+    throw new Error("Failed to create signed URL for generated image");
+  }
+
+  console.log("Generated image uploaded with signed URL");
+  return signedUrlData.signedUrl;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
