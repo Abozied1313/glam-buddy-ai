@@ -104,10 +104,12 @@ const Auth = () => {
     try {
       setLoading(true);
       const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin,
+        redirect_uri: `${window.location.origin}/auth/callback`,
       });
       if (result.error) throw result.error;
       if (result.redirected) return;
+      toast.success("تم تسجيل الدخول بنجاح!");
+      navigate("/analyze", { replace: true });
     } catch (error: any) {
       console.error("Google Auth Error:", error?.message || error);
       toast.error(error?.message || "حدث خطأ في تسجيل الدخول عبر Google");
@@ -120,10 +122,12 @@ const Auth = () => {
     try {
       setLoading(true);
       const result = await lovable.auth.signInWithOAuth("apple", {
-        redirect_uri: window.location.origin,
+        redirect_uri: `${window.location.origin}/auth/callback`,
       });
       if (result.error) throw result.error;
       if (result.redirected) return;
+      toast.success("تم تسجيل الدخول بنجاح!");
+      navigate("/analyze", { replace: true });
     } catch (error: any) {
       console.error("Apple Auth Error:", error?.message || error);
       toast.error(error?.message || "حدث خطأ في تسجيل الدخول عبر Apple");
