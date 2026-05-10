@@ -183,40 +183,31 @@ async function readReplicateJson(response: Response, context: string) {
   return payload;
 }
 
-async function pollReplicatePrediction(initialPrediction: any) {
-  let prediction = initialPrediction;
-  const startedAt = Date.now();
-  const maxPollingMs = 135_000; // Stay below hosted function timeouts while allowing FLUX Kontext Pro enough time
-  const pollIntervalMs = 2000;
+async function fetchReplicatePrediction(predictionId: string) {
+  const pollResponse = await fetch(`${REPLICATE_PREDICTIONS_ENDPOINT}/${encodeURIComponent(predictionId)}`, {
+    headers: {
+      Authorization: `Bearer ${REPLICATE_API_TOKEN}`,
+    },
+  });
 
-  while (!REPLICATE_TERMINAL_STATUSES.has(prediction.status)) {
-    if (Date.now() - startedAt > maxPollingMs) {
-      console.error("Replicate polling timed out:", {
-        id: prediction.id,
-        status: prediction.status,
-        urls: prediction.urls,
-      });
-      throw new Error("Replicate image generation timed out after 135s");
-    }
+  return readReplicateJson(pollResponse, "Replicate polling");
+}
 
-    const pollUrl = prediction.urls?.get || (prediction.id ? `${REPLICATE_PREDICTIONS_ENDPOINT}/${prediction.id}` : null);
-    if (!pollUrl) {
-      throw new Error("Replicate response did not include a polling URL");
-    }
+function isValidReplicatePredictionId(predictionId: string): boolean {
+  return /^[a-zA-Z0-9_-]{8,128}$/.test(predictionId);
+}
 
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+async function verifyAnalysisOwnership(supabase: any, analysisId: string, userId: string) {
+  const { data, error } = await supabase
+    .from("style_analyses")
+    .select("id,user_id,analysis_result")
+    .eq("id", analysisId)
+    .maybeSingle();
 
-    const pollResponse = await fetch(pollUrl, {
-      headers: {
-        Authorization: `Bearer ${REPLICATE_API_TOKEN}`,
-      },
-    });
+  if (error) throw new Error("Failed to verify analysis ownership");
+  if (!data || data.user_id !== userId) throw new Error("Analysis not found or access denied");
 
-    prediction = await readReplicateJson(pollResponse, "Replicate polling");
-    console.log("Replicate poll status:", prediction.status, "elapsed:", Math.round((Date.now() - startedAt) / 1000) + "s");
-  }
-
-  return prediction;
+  return data;
 }
 
 serve(async (req) => {
