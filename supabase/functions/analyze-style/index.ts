@@ -294,9 +294,9 @@ serve(async (req) => {
     const authenticatedUserId = user.id;
     console.log("Authenticated user:", authenticatedUserId);
 
-    // Parse and validate input
+    // Parse request and create service role client for storage/database operations
     const requestData = await req.json();
-    const { imageUrl, occasion, gender, userId, analysisId } = requestData;
+    const { action, imageUrl, occasion, gender, userId, analysisId } = requestData;
     
     // SECURITY: Validate all inputs
     const validation = validateInput(requestData);
@@ -319,11 +319,62 @@ serve(async (req) => {
 
     // Use authenticated user ID for all operations
     const effectiveUserId = authenticatedUserId;
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    if (action === "poll_replicate") {
+      const predictionId = requestData.predictionId;
+      if (!analysisId || !isValidUUID(analysisId) || !predictionId || !isValidReplicatePredictionId(predictionId)) {
+        return new Response(
+          JSON.stringify({ error: "Missing or invalid analysisId/predictionId" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (!REPLICATE_API_TOKEN) {
+        return new Response(
+          JSON.stringify({ error: "خدمة توليد الصور غير مهيأة. يرجى إضافة REPLICATE_API_TOKEN." }),
+          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const existingAnalysis = await verifyAnalysisOwnership(supabase, analysisId, effectiveUserId);
+      const prediction = await fetchReplicatePrediction(predictionId);
+      const existingResult = existingAnalysis.analysis_result && typeof existingAnalysis.analysis_result === "object"
+        ? existingAnalysis.analysis_result
+        : {};
+
+      if (prediction.status === "succeeded" && prediction.output) {
+        const generatedImageUrl = await saveReplicateOutputImage(supabase, effectiveUserId, prediction.output);
+        const result = {
+          ...existingResult,
+          generated_image_url: generatedImageUrl,
+          image_generation_error: null,
+          replicate_prediction_id: prediction.id,
+          replicate_status: prediction.status,
+        };
+
+        await supabase
+          .from("style_analyses")
+          .update({ analysis_result: result, generated_image_url: generatedImageUrl })
+          .eq("id", analysisId);
+
+        return new Response(JSON.stringify({ status: prediction.status, generated_image_url: generatedImageUrl, analysis_result: result }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (prediction.status === "failed" || prediction.status === "canceled") {
+        const imageGenerationError = `Replicate ${prediction.status}: ${prediction.error || "unknown error"}`;
+        const result = { ...existingResult, image_generation_error: imageGenerationError, replicate_status: prediction.status };
+        await supabase.from("style_analyses").update({ analysis_result: result }).eq("id", analysisId);
+      }
+
+      return new Response(JSON.stringify({ status: prediction.status, error: prediction.error || null }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     console.log("Starting analysis for:", { occasion, gender, analysisId, userId: effectiveUserId });
-
-    // Create service role client for database operations
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // Download image from private bucket using service role client
     // Extract the storage path from the URL
