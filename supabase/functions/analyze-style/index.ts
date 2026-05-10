@@ -186,7 +186,7 @@ async function readReplicateJson(response: Response, context: string) {
 async function pollReplicatePrediction(initialPrediction: any) {
   let prediction = initialPrediction;
   const startedAt = Date.now();
-  const maxPollingMs = 180_000; // 3 minutes — FLUX Kontext Pro can take >60s
+  const maxPollingMs = 135_000; // Stay below hosted function timeouts while allowing FLUX Kontext Pro enough time
   const pollIntervalMs = 2000;
 
   while (!REPLICATE_TERMINAL_STATUSES.has(prediction.status)) {
@@ -196,7 +196,7 @@ async function pollReplicatePrediction(initialPrediction: any) {
         status: prediction.status,
         urls: prediction.urls,
       });
-      throw new Error("Replicate image generation timed out after 180s");
+      throw new Error("Replicate image generation timed out after 135s");
     }
 
     const pollUrl = prediction.urls?.get || (prediction.id ? `${REPLICATE_PREDICTIONS_ENDPOINT}/${prediction.id}` : null);
@@ -458,8 +458,10 @@ serve(async (req) => {
           input: {
             prompt: stylePrompt,
             input_image: replicateInputImageUrl,
+        aspect_ratio: "match_input_image",
             output_format: "jpg",
             safety_tolerance: 2,
+        prompt_upsampling: false,
           },
         }),
       });
