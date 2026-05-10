@@ -120,13 +120,21 @@ const Analyze = () => {
 
       let finalFunctionData = functionData;
       if (!functionData.generated_image_url && functionData.replicate_prediction_id) {
-        toast.loading("جاري توليد الصورة المقترحة...", { id: "image-generation" });
-        const pollData = await pollReplicateImageGeneration(
-          analysisRecord.id,
-          functionData.replicate_prediction_id
-        );
-        finalFunctionData = pollData.analysis_result || { ...functionData, generated_image_url: pollData.generated_image_url };
-        toast.dismiss("image-generation");
+        await supabase
+          .from("style_analyses")
+          .update({ analysis_result: functionData, generated_image_url: null })
+          .eq("id", analysisRecord.id);
+
+        try {
+          toast.loading("جاري توليد الصورة المقترحة...", { id: "image-generation" });
+          const pollData = await pollReplicateImageGeneration(
+            analysisRecord.id,
+            functionData.replicate_prediction_id
+          );
+          finalFunctionData = pollData.analysis_result || { ...functionData, generated_image_url: pollData.generated_image_url };
+        } finally {
+          toast.dismiss("image-generation");
+        }
       }
 
       // Update analysis with results and generated image
