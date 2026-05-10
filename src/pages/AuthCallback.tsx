@@ -26,6 +26,18 @@ const AuthCallback = () => {
           if (exchangeError) throw exchangeError;
         }
 
+        const hashParams = new URLSearchParams((window.location.hash || "").replace(/^#/, ""));
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
+
+        if (accessToken && refreshToken) {
+          const { error: tokenSessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (tokenSessionError) throw tokenSessionError;
+        }
+
         // Supabase handles hash fragments automatically, but we ensure we have a session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
