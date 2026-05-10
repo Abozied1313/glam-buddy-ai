@@ -146,6 +146,21 @@ function extractReplicateImageUrl(output: unknown): string | null {
   return null;
 }
 
+function getReplicateErrorMessage(payload: any): string {
+  const detail = payload?.detail;
+  if (typeof payload?.error === "string") return payload.error;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => item?.msg || item?.message || JSON.stringify(item))
+      .filter(Boolean)
+      .join("; ");
+  }
+  if (payload?.error) return JSON.stringify(payload.error);
+  if (detail) return JSON.stringify(detail);
+  return "Unknown Replicate API error";
+}
+
 async function readReplicateJson(response: Response, context: string) {
   const responseText = await response.text();
   let payload: any = null;
@@ -158,7 +173,7 @@ async function readReplicateJson(response: Response, context: string) {
 
   if (!response.ok) {
     console.error(`${context} failed:`, response.status, responseText);
-    throw new Error(`${context} failed`);
+    throw new Error(`${context} failed (${response.status}): ${getReplicateErrorMessage(payload)}`);
   }
 
   if (!payload) {
