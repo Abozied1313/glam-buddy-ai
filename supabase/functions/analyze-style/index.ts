@@ -298,25 +298,6 @@ serve(async (req) => {
     const requestData = await req.json();
     const { action, imageUrl, occasion, gender, userId, analysisId } = requestData;
     
-    // SECURITY: Validate all inputs
-    const validation = validateInput(requestData);
-    if (!validation.valid) {
-      console.error("Input validation failed:", validation.error);
-      return new Response(
-        JSON.stringify({ error: validation.error }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // SECURITY: Verify authenticated user matches requested userId
-    if (userId && userId !== authenticatedUserId) {
-      console.error("Authorization failed: user mismatch", { authenticated: authenticatedUserId, requested: userId });
-      return new Response(
-        JSON.stringify({ error: "Unauthorized: cannot process data for another user" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     // Use authenticated user ID for all operations
     const effectiveUserId = authenticatedUserId;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -372,6 +353,25 @@ serve(async (req) => {
       return new Response(JSON.stringify({ status: prediction.status, error: prediction.error || null }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // SECURITY: Validate all inputs
+    const validation = validateInput(requestData);
+    if (!validation.valid) {
+      console.error("Input validation failed:", validation.error);
+      return new Response(
+        JSON.stringify({ error: validation.error }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // SECURITY: Verify authenticated user matches requested userId
+    if (userId && userId !== authenticatedUserId) {
+      console.error("Authorization failed: user mismatch", { authenticated: authenticatedUserId, requested: userId });
+      return new Response(
+        JSON.stringify({ error: "Unauthorized: cannot process data for another user" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     console.log("Starting analysis for:", { occasion, gender, analysisId, userId: effectiveUserId });
