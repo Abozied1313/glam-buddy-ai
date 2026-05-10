@@ -8,6 +8,7 @@ import { Upload, Sparkles, Loader2, Camera, ArrowRight, Heart } from "lucide-rea
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
+import { pollReplicateImageGeneration } from "@/lib/replicatePolling";
 
 const Analyze = () => {
   const navigate = useNavigate();
@@ -117,12 +118,31 @@ const Analyze = () => {
 
       if (functionError) throw functionError;
 
+      let finalFunctionData = functionData;
+      if (!functionData.generated_image_url && functionData.replicate_prediction_id) {
+        await supabase
+          .from("style_analyses")
+          .update({ analysis_result: functionData, generated_image_url: null })
+          .eq("id", analysisRecord.id);
+
+        try {
+          toast.loading("جاري توليد الصورة المقترحة...", { id: "image-generation" });
+          const pollData = await pollReplicateImageGeneration(
+            analysisRecord.id,
+            functionData.replicate_prediction_id
+          );
+          finalFunctionData = pollData.analysis_result || { ...functionData, generated_image_url: pollData.generated_image_url };
+        } finally {
+          toast.dismiss("image-generation");
+        }
+      }
+
       // Update analysis with results and generated image
       const { error: updateError } = await supabase
         .from("style_analyses")
         .update({ 
-          analysis_result: functionData,
-          generated_image_url: functionData.generated_image_url,
+          analysis_result: finalFunctionData,
+          generated_image_url: finalFunctionData.generated_image_url,
         })
         .eq("id", analysisRecord.id);
 
