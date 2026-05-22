@@ -536,29 +536,26 @@ serve(async (req) => {
 
     // Build dynamic prompt based on gender and analysis
     const outfitDetails = analysisResult.توصيات_الملابس_والأطقم || [];
-    const hairstyleDetails = analysisResult.توصيات_تسريحات_الشعر || [];
     const makeupDetails = analysisResult.اقتراحات_المكياج || "";
     const hijabDetails = analysisResult.تنسيق_الحجاب || "";
-
-    const outfitDescriptions = outfitDetails
-      .slice(0, 3)
-      .map((item: any) => `${item.القطعة || 'elegant piece'} in ${item.اللون || 'neutral'} color made of ${item.الخامة || 'quality fabric'}`)
-      .join(", ");
-
-    const hairstyleDescription = hairstyleDetails[0]?.التسريحة || "modern stylish hairstyle";
+    const outfitDescriptions = buildOutfitPrompt(outfitDetails);
 
     let stylePrompt = "";
 
-    // FLUX Kontext Pro is an image-EDITING model that preserves the input identity
-    // and only modifies what we instruct (the outfit, hair, hijab, makeup).
+    // FLUX Kontext is an image-EDITING model. Keep the edit intentionally narrow:
+    // changing studio/background/hair/expression often causes face drift and outfit hallucination.
+    const identityLock = "Identity lock: preserve the exact same face, facial features, expression, eyes, nose, mouth, skin tone, head shape, hair, body shape, pose, camera angle, framing, lighting, and background from the input image. Do not beautify, age, slim, reshape, redraw, or reinterpret the face. Keep the original facial expression unchanged.";
+    const outfitLock = `Edit only the clothing area. Replace the current outfit with exactly these visible garments and colors, no substitutions, no missing layers, no extra colors: ${outfitDescriptions}. Every listed garment must be visible in the final image. If a shirt, tie, jacket, dress, hijab, trousers, or shoes are listed, they must appear clearly and in the stated color.`;
+    const negativeLock = "Negative instructions: no bare chest, no open jacket without the listed shirt, no changing facial expression, no new person, no different face, no different pose, no different background, no costume, no invented outfit pieces, no wrong garment colors.";
+
     if (gender === "male") {
-      stylePrompt = `Keep the exact same person, same face, same facial features, same skin tone, same body, and same pose from the input image. Only change their outfit and hairstyle. New hairstyle: ${hairstyleDescription}. New outfit: ${outfitDescriptions || "elegant modern outfit"}. Studio lighting, clean background, professional fashion photography, photorealistic, 8K. Do NOT alter the face in any way.`;
+      stylePrompt = `${identityLock} ${outfitLock} Keep the existing hair exactly as in the input image; do not change hairstyle. ${negativeLock}`;
     } else {
       const hasHijab = hijabDetails && hijabDetails.length > 0;
       if (hasHijab) {
-        stylePrompt = `Keep the exact same woman, same face, same facial features, same skin tone, and same pose from the input image. Only change her hijab style, makeup, and outfit. New hijab: ${hijabDetails}. ${makeupDetails ? `New makeup: ${makeupDetails}. ` : ""}New outfit: ${outfitDescriptions || "sophisticated modest fashion"}. Studio lighting, clean background, professional fashion photography, photorealistic, 8K. Do NOT alter the face in any way.`;
+        stylePrompt = `${identityLock} ${outfitLock} Hijab edit only if needed: ${normalizePromptValue(hijabDetails)}. Keep makeup subtle and do not change facial structure${makeupDetails ? `; makeup target: ${normalizePromptValue(makeupDetails)}` : ""}. ${negativeLock}`;
       } else {
-        stylePrompt = `Keep the exact same woman, same face, same facial features, same skin tone, and same pose from the input image. Only change her hairstyle, makeup, and outfit. New hairstyle: ${hairstyleDescription}. ${makeupDetails ? `New makeup: ${makeupDetails}. ` : ""}New outfit: ${outfitDescriptions || "trendy modern clothing"}. Studio lighting, clean background, professional fashion photography, photorealistic, 8K. Do NOT alter the face in any way.`;
+        stylePrompt = `${identityLock} ${outfitLock} Keep the existing hair shape as close as possible; do not change face or expression${makeupDetails ? `; makeup target: ${normalizePromptValue(makeupDetails)}` : ""}. ${negativeLock}`;
       }
     }
 
