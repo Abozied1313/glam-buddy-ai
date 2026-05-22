@@ -10,6 +10,61 @@ import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
 import { pollReplicateImageGeneration } from "@/lib/replicatePolling";
 
+const MAX_ANALYSIS_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_ANALYSIS_IMAGE_DIMENSION = 1600;
+
+const loadImage = (src: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+
+const canvasToBlob = (canvas: HTMLCanvasElement, type: string, quality: number) =>
+  new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("فشل تجهيز الصورة"))), type, quality);
+  });
+
+const prepareImageForAnalysis = async (file: File) => {
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const img = await loadImage(objectUrl);
+    const longestSide = Math.max(img.naturalWidth, img.naturalHeight);
+    const scale = Math.min(1, MAX_ANALYSIS_IMAGE_DIMENSION / longestSide);
+
+    if (file.size <= MAX_ANALYSIS_IMAGE_BYTES && scale === 1 && file.type !== "image/heic") {
+      return file;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("فشل تجهيز الصورة");
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    let quality = 0.86;
+    let blob = await canvasToBlob(canvas, "image/jpeg", quality);
+    while (blob.size > MAX_ANALYSIS_IMAGE_BYTES && quality > 0.58) {
+      quality -= 0.08;
+      blob = await canvasToBlob(canvas, "image/jpeg", quality);
+    }
+
+    return new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "analysis-image"}.jpg`, {
+      type: "image/jpeg",
+      lastModified: Date.now(),
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
+
 const Analyze = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -49,15 +104,16 @@ const Analyze = () => {
     );
   }
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setImage(file);
+      const preparedFile = await prepareImageForAnalysis(file);
+      setImage(preparedFile);
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreview(reader.result as string);
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(preparedFile);
     }
   };
 
@@ -71,11 +127,12 @@ const Analyze = () => {
 
     try {
       // Upload image to Supabase Storage
-      const fileExt = image.name.split(".").pop();
+      const imageToUpload = await prepareImageForAnalysis(image);
+      const fileExt = imageToUpload.name.split(".").pop() || "jpg";
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("analysis-images")
-        .upload(fileName, image);
+        .upload(fileName, imageToUpload, { contentType: imageToUpload.type || "image/jpeg" });
 
       if (uploadError) throw uploadError;
 
