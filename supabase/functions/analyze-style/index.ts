@@ -536,9 +536,10 @@ serve(async (req) => {
 
     // Build dynamic prompt based on gender and analysis
     const outfitDetails = analysisResult.توصيات_الملابس_والأطقم || [];
+    const modelOutfitPrompt = normalizePromptValue(analysisResult.image_generation_prompt || "");
     const makeupDetails = analysisResult.اقتراحات_المكياج || "";
     const hijabDetails = analysisResult.تنسيق_الحجاب || "";
-    const outfitDescriptions = buildOutfitPrompt(outfitDetails);
+    const outfitDescriptions = modelOutfitPrompt || buildOutfitPrompt(outfitDetails);
 
     let stylePrompt = "";
 
