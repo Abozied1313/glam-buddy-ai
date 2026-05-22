@@ -17,6 +17,7 @@ const REPLICATE_MODEL_NAME = "flux-kontext-pro";
 const REPLICATE_MODEL_PREDICTIONS_ENDPOINT = `https://api.replicate.com/v1/models/${REPLICATE_MODEL_OWNER}/${REPLICATE_MODEL_NAME}/predictions`;
 const REPLICATE_PREDICTIONS_ENDPOINT = "https://api.replicate.com/v1/predictions";
 const REPLICATE_TERMINAL_STATUSES = new Set(["succeeded", "failed", "canceled"]);
+const MAX_INPUT_IMAGE_BYTES = 10 * 1024 * 1024;
 
 // Allowed values for validation
 const ALLOWED_OCCASIONS = ["casual", "work", "formal", "party", "wedding", "sport"];
@@ -394,8 +395,12 @@ serve(async (req) => {
       throw new Error("Failed to fetch image from storage");
     }
 
-    if (imageData.size > 10 * 1024 * 1024) {
-      throw new Error("Image too large: maximum 10MB allowed");
+    if (imageData.size > MAX_INPUT_IMAGE_BYTES) {
+      console.error("Input image too large:", imageData.size);
+      return new Response(
+        JSON.stringify({ error: "الصورة كبيرة جداً. يرجى اختيار صورة أصغر أو إعادة المحاولة بعد ضغط الصورة." }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const imageBuffer = await imageData.arrayBuffer();
@@ -433,6 +438,14 @@ serve(async (req) => {
 4. ${gender === "male" ? "تصفيف شعر يناسب طول شعره الحالي" : "مكياج وتسريحة شعر/حجاب مناسبة"}
 
 أعد النتيجة بتنسيق JSON فقط.`;
+
+    if (!LOVABLE_API_KEY) {
+      console.error("LOVABLE_API_KEY is not configured");
+      return new Response(
+        JSON.stringify({ error: "خدمة تحليل الصور غير مهيأة حالياً." }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     console.log("Calling Lovable AI for style analysis...");
 
