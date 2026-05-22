@@ -588,10 +588,10 @@ serve(async (req) => {
           input: {
             prompt: stylePrompt,
             input_image: replicateInputImageUrl,
-        aspect_ratio: "match_input_image",
-            output_format: "jpg",
+            aspect_ratio: "match_input_image",
+            output_format: "png",
             safety_tolerance: 2,
-        prompt_upsampling: false,
+            prompt_upsampling: false,
           },
         }),
       });
