@@ -198,6 +198,34 @@ function isValidReplicatePredictionId(predictionId: string): boolean {
   return /^[a-zA-Z0-9_-]{8,128}$/.test(predictionId);
 }
 
+function normalizePromptValue(value: unknown): string {
+  return String(value ?? "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildOutfitPrompt(outfitDetails: any[]): string {
+  const pieces = outfitDetails
+    .slice(0, 5)
+    .map((item: any, index: number) => {
+      const piece = normalizePromptValue(item?.القطعة || item?.piece || "");
+      const color = normalizePromptValue(item?.اللون || item?.color || "");
+      const fabric = normalizePromptValue(item?.الخامة || item?.fabric || "");
+      if (!piece) return null;
+
+      const parts = [`${index + 1}. ${piece}`];
+      if (color) parts.push(`exact color: ${color}`);
+      if (fabric) parts.push(`fabric: ${fabric}`);
+      return parts.join(" — ");
+    })
+    .filter(Boolean);
+
+  return pieces.length > 0
+    ? pieces.join("; ")
+    : "1. complete elegant outfit with clearly visible top, lower garment, and appropriate shoes";
+}
+
 async function verifyAnalysisOwnership(supabase: any, analysisId: string, userId: string) {
   const { data, error } = await supabase
     .from("style_analyses")
