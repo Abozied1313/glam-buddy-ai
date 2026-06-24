@@ -1,18 +1,22 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Navbar from "@/components/Layout/Navbar";
 import Footer from "@/components/Layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, Bot, Code2, FileText, Send, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  Code2,
+  Copy,
+  FileText,
+  MessageSquare,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Wand2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 type ChatMessage = {
@@ -20,117 +24,131 @@ type ChatMessage = {
   content: string;
 };
 
-const models = [
+type AgentMode = "style" | "image" | "workstation";
+
+const modes: Array<{
+  id: AgentMode;
+  title: string;
+  description: string;
+  icon: typeof Sparkles;
+}> = [
   {
-    id: "qwen2.5:7b",
-    label: "Qwen 2.5 7B",
-    description: "للشرح بالعربي، تلخيص التقارير، وترتيب الأولويات.",
+    id: "style",
+    title: "Gemini style analysis",
+    description: "استخدمه لصياغة أسئلة وتحسين مدخلات تحليل الستايل داخل مسار Supabase الحالي.",
+    icon: Sparkles,
   },
   {
-    id: "qwen2.5-coder:7b",
-    label: "Qwen 2.5 Coder 7B",
-    description: "لشرح الكود، مراجعة مشاريع Git، واقتراح إصلاحات بدون تنفيذ.",
+    id: "image",
+    title: "Replicate image planning",
+    description: "استخدمه لتحضير وصف الصورة والنتيجة المطلوبة قبل تشغيل توليد الصور.",
+    icon: Wand2,
+  },
+  {
+    id: "workstation",
+    title: "Workstation reports",
+    description: "استخدمه لفهم dashboard و recommendations و actions-center بدون تنفيذ أوامر.",
+    icon: Code2,
   },
 ];
 
 const promptPresets = [
   {
-    title: "لخص حالة الوكيل",
+    title: "لخص تقرير الوكيل",
     icon: FileText,
     prompt:
-      "انت مساعد محلي آمن. اشرح لي بالعربي حالة AI Workstation Agent بناء على آخر dashboard/recommendations/actions-center ألصقها لك، وطلع أهم 3 خطوات فقط.",
+      "الصق هنا تقرير dashboard أو recommendations. المطلوب: لخص أهم المشاكل، رتبها حسب الأولوية، واكتب الخطوة اليدوية التالية فقط.",
   },
   {
-    title: "راجع Actions Center",
+    title: "راجع OAuth بدون كسره",
+    icon: ShieldCheck,
+    prompt:
+      "راجع معي مشكلة Google OAuth بدون تعديل Auth أو Supabase config. المطلوب: خطوات فحص آمنة فقط، وما الذي لا يجب لمسه.",
+  },
+  {
+    title: "حضّر تحليل ستايل",
     icon: Sparkles,
     prompt:
-      "راجع قائمة Actions Center التي سأرسلها لك. رتبها حسب الأهمية، ووضح أيها اختياري وأيها ضروري. لا تقترح تنفيذ تلقائي.",
-  },
-  {
-    title: "راجع مشروع كود",
-    icon: Code2,
-    prompt:
-      "انت Qwen Coder كمستشار فقط. سأرسل لك git status أو مقطع كود. اشرح المخاطر واقترح patch conceptually بدون تنفيذ أوامر أو تعديل ملفات.",
+      "ساعدني أصيغ طلب تحليل ستايل مناسب لمسار Gemini الحالي في Glam Buddy. لا تضف أي API جديد ولا تغيّر Replicate.",
   },
 ];
 
-const safetySystemPrompt = `
-You are a local AI advisor inside Glam Buddy for the AI Workstation Agent.
-Rules:
-- Read and explain only.
-- Never claim you executed commands.
-- Never instruct automatic deletion, installation, killing processes, commit, push, pull, checkout, or file moves.
-- If an action is needed, present it as a manual user-approved step.
-- Prefer Arabic explanations unless the user asks otherwise.
-`.trim();
+const initialMessages: ChatMessage[] = [
+  {
+    role: "assistant",
+    content:
+      "أهلا، دي واجهة Agent Center داخل Glam Buddy. الصفحة لا تتصل بـ Ollama ولا تفتح localhost. مسار الذكاء الحالي للتطبيق يظل Gemini/Lovable للتحليل و Replicate لتوليد الصور عبر Supabase Edge Functions.",
+  },
+];
+
+const buildLocalReply = (input: string, mode: AgentMode) => {
+  const normalized = input.toLowerCase();
+  const sections: string[] = [];
+
+  if (mode === "style") {
+    sections.push("مسار الستايل الحالي: Supabase Auth ثم Edge Function analyze-style ثم Gemini/Lovable للتحليل. لا نحتاج إضافة Ollama هنا.");
+    sections.push("أفضل خطوة: اكتب المناسبة، الجنس، ونوع النتيجة المطلوبة بوضوح، ثم ارفع الصورة من صفحة Analyze المعتادة.");
+  }
+
+  if (mode === "image") {
+    sections.push("مسار الصور الحالي يعتمد على Replicate من الخلفية فقط. مفتاح Replicate يجب أن يبقى secret داخل Supabase وليس في الواجهة.");
+    sections.push("أفضل خطوة: حضر prompt واضح للصورة النهائية، واترك التنفيذ للـ Edge Function الموجودة.");
+  }
+
+  if (mode === "workstation") {
+    sections.push("تعامل مع تقارير الوكيل كقراءة فقط: ابدأ بـ Critical ثم High، وبعدها Medium و Low.");
+    sections.push("أي أمر فيه install أو delete أو move أو git push/pull يحتاج موافقة صريحة منك خارج الصفحة.");
+  }
+
+  if (normalized.includes("oauth") || normalized.includes("google") || normalized.includes("جوجل")) {
+    sections.push("بالنسبة لـ Google OAuth: لا تغيّر Auth.tsx أو إعدادات Supabase لمجرد اختبار صفحة الوكيل. افحص redirect URL و session timing فقط إذا ظهرت مشكلة دخول حقيقية.");
+  }
+
+  if (normalized.includes("ollama") || normalized.includes("qwen") || normalized.includes("كوين")) {
+    sections.push("Qwen المحلي ممكن ندمجه لاحقا عبر bridge محلي منفصل، لكن هذه الصفحة لا تتصل به مباشرة حتى لا تتعطل بسبب CORS أو localhost endpoints.");
+  }
+
+  if (normalized.includes("تقرير") || normalized.includes("dashboard") || normalized.includes("actions") || normalized.includes("recommendations")) {
+    sections.push("لو عندك تقرير، الصقه هنا أو في المحادثة القادمة وسأقسمه إلى: مطلوب الآن، اختياري، وما يجب تأجيله.");
+  }
+
+  if (sections.length === 0) {
+    sections.push("اقتراحي الآمن: حدد هل سؤالك عن الستايل، الصور، OAuth، أو تقارير الوكيل. بعدها نمشي خطوة واحدة واضحة بدون تغيير تلقائي.");
+  }
+
+  return sections.map((section, index) => `${index + 1}. ${section}`).join("\n");
+};
 
 const Agent = () => {
-  const [model, setModel] = useState("qwen2.5:7b");
+  const [mode, setMode] = useState<AgentMode>("style");
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "assistant",
-      content:
-        "أهلا، أنا واجهة Glam Buddy للوكيل المحلي. أقدر أشرح تقارير الوكيل، أراجع توصياته، وأساعدك مع Qwen أو Qwen Coder. أنا لا أنفذ أوامر ولا أعدل ملفات.",
-    },
-  ]);
-  const [isSending, setIsSending] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
 
-  const selectedModel = useMemo(() => models.find((item) => item.id === model) ?? models[0], [model]);
+  const selectedMode = modes.find((item) => item.id === mode) ?? modes[0];
 
-  const buildPrompt = (nextInput: string) => {
-    const recentMessages = messages
-      .slice(-6)
-      .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content}`)
-      .join("\n\n");
-
-    return `${safetySystemPrompt}\n\nConversation so far:\n${recentMessages}\n\nUser: ${nextInput}\n\nAssistant:`;
-  };
-
-  const sendMessage = async () => {
+  const sendMessage = () => {
     const trimmed = input.trim();
-    if (!trimmed || isSending) return;
+    if (!trimmed) return;
 
     const nextMessages: ChatMessage[] = [...messages, { role: "user", content: trimmed }];
-    setMessages(nextMessages);
+    setMessages([
+      ...nextMessages,
+      {
+        role: "assistant",
+        content: buildLocalReply(trimmed, mode),
+      },
+    ]);
     setInput("");
-    setIsSending(true);
+  };
+
+  const copyBridgePrompt = async () => {
+    const prompt = `Build a safe Glam Buddy agent bridge that uses the existing Supabase architecture. Do not change Google OAuth. Do not expose Replicate secrets in the frontend. Keep Gemini/Replicate as the production AI path. Add local Qwen only through an optional local bridge after explicit user approval.`;
 
     try {
-      const response = await fetch("http://localhost:11434/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          prompt: buildPrompt(trimmed),
-          stream: false,
-          options: {
-            temperature: 0.3,
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Ollama returned ${response.status}`);
-      }
-
-      const data = await response.json();
-      const answer = data.response?.trim() || "لم يرجع الموديل ردا واضحا.";
-      setMessages([...nextMessages, { role: "assistant", content: answer }]);
-    } catch (error) {
-      const details = error instanceof Error ? error.message : "Unknown error";
-      setMessages([
-        ...nextMessages,
-        {
-          role: "assistant",
-          content:
-            `لم أستطع الاتصال بـ Ollama من الواجهة. تأكد أن Ollama يعمل وأن الموديل ${model} موجود. ` +
-            `لو ظهرت مشكلة CORS، شغل الواجهة من بيئة محلية مسموحة أو استخدم bridge محلي لاحقا. التفاصيل: ${details}`,
-        },
-      ]);
-      toast.error("تعذر الاتصال بـ Ollama المحلي");
-    } finally {
-      setIsSending(false);
+      await navigator.clipboard.writeText(prompt);
+      toast.success("تم نسخ prompt الربط الآمن");
+    } catch {
+      toast.error("لم أستطع النسخ تلقائيا");
     }
   };
 
@@ -144,43 +162,59 @@ const Agent = () => {
             <div className="space-y-3">
               <Badge variant="outline" className="w-fit gap-2 px-3 py-1">
                 <ShieldCheck className="h-4 w-4 text-primary" />
-                وضع آمن: استشارة فقط
+                آمن: لا أوامر ولا localhost
               </Badge>
               <div>
-                <h1 className="text-4xl md:text-5xl font-bold gradient-text">Agent Chat</h1>
+                <h1 className="text-4xl md:text-5xl font-bold gradient-text">Agent Center</h1>
                 <p className="mt-3 max-w-2xl text-muted-foreground leading-relaxed">
-                  تحدث مع Qwen المحلي لشرح تقارير AI Workstation Agent ومراجعة الأكواد والتوصيات. الواجهة لا تنفذ أوامر ولا تغير ملفات.
+                  واجهة مساعدة داخل Glam Buddy لتنظيم التفكير حول Gemini و Replicate وتقارير الوكيل. الصفحة لا تستخدم Ollama مباشرة ولا تغير تسجيل الدخول.
                 </p>
               </div>
             </div>
 
-            <Card className="w-full lg:w-[360px] shadow-card">
+            <Card className="w-full lg:w-[380px] shadow-card">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Bot className="h-5 w-5 text-primary" />
-                  الموديل المحلي
+                  مسار الذكاء الحالي
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <Select value={model} onValueChange={setModel}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="اختر الموديل" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {models.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-sm text-muted-foreground">{selectedModel.description}</p>
+              <CardContent className="space-y-2 text-sm text-muted-foreground leading-7">
+                <p>Supabase Auth يحافظ على الدخول.</p>
+                <p>Gemini/Lovable يحلل الستايل داخل Edge Function.</p>
+                <p>Replicate يولد الصور من الخلفية فقط.</p>
               </CardContent>
             </Card>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
             <aside className="space-y-4">
+              <Card className="shadow-card">
+                <CardHeader>
+                  <CardTitle className="text-lg">وضع المحادثة</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {modes.map((item) => {
+                    const Icon = item.icon;
+                    const active = mode === item.id;
+                    return (
+                      <Button
+                        key={item.id}
+                        variant={active ? "default" : "outline"}
+                        className="w-full justify-start h-auto py-3 text-right whitespace-normal"
+                        onClick={() => setMode(item.id)}
+                      >
+                        <Icon className="h-4 w-4 ml-2" />
+                        <span>
+                          <span className="block font-semibold">{item.title}</span>
+                          <span className="block text-xs opacity-80 mt-1">{item.description}</span>
+                        </span>
+                      </Button>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+
               <Card className="shadow-card">
                 <CardHeader>
                   <CardTitle className="text-lg">بدايات سريعة</CardTitle>
@@ -207,11 +241,15 @@ const Agent = () => {
                 <CardContent className="pt-6 space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <div className="flex items-center gap-2 font-semibold text-foreground">
                     <AlertTriangle className="h-4 w-4 text-primary" />
-                    طريقة الاستخدام
+                    ملاحظة مهمة
                   </div>
                   <p>
-                    شغل مهام الوكيل مثل dashboard أو actions-center، ثم الصق التقرير أو الملخص هنا. Qwen يشرحه ويرتب الخطوات، لكن القرار والتنفيذ يظل بإيدك.
+                    دمج Qwen المحلي ممكن لاحقا عن طريق bridge محلي منفصل. هذه الصفحة حاليا لا تكسر OAuth ولا تستدعي أي endpoint محلي.
                   </p>
+                  <Button variant="outline" size="sm" onClick={() => void copyBridgePrompt()}>
+                    <Copy className="h-4 w-4 ml-2" />
+                    نسخ prompt الربط الآمن
+                  </Button>
                 </CardContent>
               </Card>
             </aside>
@@ -219,8 +257,8 @@ const Agent = () => {
             <Card className="min-h-[640px] shadow-elegant flex flex-col overflow-hidden">
               <CardHeader className="border-b bg-card/80">
                 <CardTitle className="flex items-center gap-2 text-xl">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                  محادثة الوكيل المحلي
+                  <MessageSquare className="h-5 w-5 text-primary" />
+                  {selectedMode.title}
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0 flex flex-col flex-1">
@@ -247,20 +285,20 @@ const Agent = () => {
                   <Textarea
                     value={input}
                     onChange={(event) => setInput(event.target.value)}
-                    placeholder="اكتب سؤالك أو الصق تقرير dashboard/actions-center هنا..."
+                    placeholder="اكتب سؤالك عن Glam Buddy أو الصق ملخص تقرير الوكيل هنا..."
                     className="min-h-[110px] resize-none text-base leading-7"
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
                         event.preventDefault();
-                        void sendMessage();
+                        sendMessage();
                       }
                     }}
                   />
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-xs text-muted-foreground">Ctrl + Enter للإرسال. لا يوجد تنفيذ أوامر من داخل الشات.</p>
-                    <Button onClick={() => void sendMessage()} disabled={isSending || !input.trim()} variant="hero">
+                    <p className="text-xs text-muted-foreground">Ctrl + Enter للإرسال. الردود إرشادية فقط ولا تنفذ أي شيء.</p>
+                    <Button onClick={sendMessage} disabled={!input.trim()} variant="hero">
                       <Send className="h-4 w-4 ml-2" />
-                      {isSending ? "جاري التفكير..." : "إرسال"}
+                      إرسال
                     </Button>
                   </div>
                 </div>

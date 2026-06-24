@@ -4,36 +4,37 @@
 
 **URL**: https://lovable.dev/projects/5e89785d-9380-4e24-b08c-450110974b42
 
-## Local Agent Chat
+## Agent Center
 
-This branch adds a read-only local AI agent page at:
+This branch adds a read-only Agent Center page at:
 
 ```text
 /agent
 ```
 
-The page lets you chat with local Ollama models:
+The page is designed to open safely inside Glam Buddy without calling Ollama or any `localhost` endpoint directly. Glam Buddy's production AI path remains the existing Supabase-based flow:
 
-```text
-qwen2.5:7b
-qwen2.5-coder:7b
-```
+- Supabase Auth keeps user sign-in separate from the agent page.
+- The `analyze-style` Edge Function handles style analysis.
+- Gemini/Lovable is used for analysis inside the backend flow.
+- Replicate is used for image generation from the backend only.
 
-The chat is intentionally safe:
+The Agent Center is intentionally safe:
 
 - It does not execute commands.
 - It does not install, delete, move, commit, push, pull, or kill processes.
-- It is meant to explain reports, review action plans, and help with code questions.
+- It does not expose Replicate secrets in the frontend.
+- It does not change Google OAuth behavior.
+- It is meant to organize prompts, explain workstation reports, and plan manual next steps.
 
 To use it locally:
 
 ```sh
-ollama list
 npm i
 npm run dev
 ```
 
-Then open `/agent` inside the app. If the browser cannot reach Ollama because of local CORS restrictions, use this page as the UI foundation and connect it to a local bridge service later.
+Then open `/agent` inside the app. Optional local Qwen or Qwen Coder support should be added later through a separate local bridge service after explicit approval, not by calling Ollama directly from the browser.
 
 ## How can I edit this code?
 
