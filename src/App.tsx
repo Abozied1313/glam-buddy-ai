@@ -16,6 +16,7 @@ const Favorites = lazy(() => import("./pages/Favorites"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Settings = lazy(() => import("./pages/Settings"));
 const History = lazy(() => import("./pages/History"));
+const Agent = lazy(() => import("./pages/Agent"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -46,6 +47,7 @@ const App = () => (
             <Route path="/profile" element={<Profile />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/history" element={<History />} />
+            <Route path="/agent" element={<Agent />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
