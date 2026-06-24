@@ -4,6 +4,37 @@
 
 **URL**: https://lovable.dev/projects/5e89785d-9380-4e24-b08c-450110974b42
 
+## Local Agent Chat
+
+This branch adds a read-only local AI agent page at:
+
+```text
+/agent
+```
+
+The page lets you chat with local Ollama models:
+
+```text
+qwen2.5:7b
+qwen2.5-coder:7b
+```
+
+The chat is intentionally safe:
+
+- It does not execute commands.
+- It does not install, delete, move, commit, push, pull, or kill processes.
+- It is meant to explain reports, review action plans, and help with code questions.
+
+To use it locally:
+
+```sh
+ollama list
+npm i
+npm run dev
+```
+
+Then open `/agent` inside the app. If the browser cannot reach Ollama because of local CORS restrictions, use this page as the UI foundation and connect it to a local bridge service later.
+
 ## How can I edit this code?
 
 There are several ways of editing your application.
