@@ -69,10 +69,6 @@ const Navbar = () => {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={() => navigate("/agent")}>
-                    <Bot className="w-4 h-4 ml-2" />
-                    Agent Chat
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => navigate("/analyze")} className="sm:hidden">
                     تحليل جديد
                   </DropdownMenuItem>
@@ -100,10 +96,6 @@ const Navbar = () => {
             </>
           ) : (
             <div className="flex items-center gap-2">
-              <Button variant="ghost" onClick={() => navigate("/agent")} className="hidden sm:flex">
-                <Bot className="w-4 h-4 ml-2" />
-                Agent
-              </Button>
               <Button variant="ghost" onClick={() => navigate("/auth")}>
                 تسجيل الدخول
               </Button>
