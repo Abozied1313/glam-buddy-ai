@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
 import AuthCallback from "./pages/AuthCallback";
+import AdminRoute from "./components/Auth/AdminRoute";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -47,7 +48,7 @@ const App = () => (
             <Route path="/profile" element={<Profile />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/history" element={<History />} />
-            <Route path="/agent" element={<Agent />} />
+            <Route path="/agent" element={<AdminRoute><Agent /></AdminRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
