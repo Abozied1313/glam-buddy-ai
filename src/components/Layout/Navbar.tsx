@@ -49,14 +49,6 @@ const Navbar = () => {
             <>
               <Button
                 variant="ghost"
-                onClick={() => navigate("/agent")}
-                className="hidden sm:flex"
-              >
-                <Bot className="w-4 h-4 ml-2" />
-                Agent
-              </Button>
-              <Button
-                variant="ghost"
                 onClick={() => navigate("/analyze")}
                 className="hidden sm:flex"
               >
