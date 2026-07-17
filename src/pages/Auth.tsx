@@ -12,6 +12,8 @@ import Navbar from "@/components/Layout/Navbar";
 import { ArrowRight, Mail, Loader2, Phone } from "lucide-react";
 import PhoneLogin from "@/components/Auth/PhoneLogin";
 
+const OAUTH_PENDING_KEY = "the-special-style.oauth.pending";
+
 const Auth = () => {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
@@ -103,16 +105,19 @@ const Auth = () => {
     if (e) e.preventDefault();
     try {
       setLoading(true);
+      window.sessionStorage.setItem(OAUTH_PENDING_KEY, "google");
       const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin,
+        redirect_uri: `${window.location.origin}/auth/callback`,
       });
       if (result.error) throw result.error;
       if (result.redirected) return;
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("لم يتم إنشاء جلسة تسجيل الدخول، يرجى المحاولة مرة أخرى");
+      window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
       toast.success("تم تسجيل الدخول بنجاح!");
       navigate("/analyze", { replace: true });
     } catch (error: any) {
+      window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
       console.error("Google Auth Error:", error?.message || error);
       toast.error(error?.message || "حدث خطأ في تسجيل الدخول عبر Google");
       setLoading(false);
@@ -123,16 +128,19 @@ const Auth = () => {
     if (e) e.preventDefault();
     try {
       setLoading(true);
+      window.sessionStorage.setItem(OAUTH_PENDING_KEY, "apple");
       const result = await lovable.auth.signInWithOAuth("apple", {
-        redirect_uri: window.location.origin,
+        redirect_uri: `${window.location.origin}/auth/callback`,
       });
       if (result.error) throw result.error;
       if (result.redirected) return;
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("لم يتم إنشاء جلسة تسجيل الدخول، يرجى المحاولة مرة أخرى");
+      window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
       toast.success("تم تسجيل الدخول بنجاح!");
       navigate("/analyze", { replace: true });
     } catch (error: any) {
+      window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
       console.error("Apple Auth Error:", error?.message || error);
       toast.error(error?.message || "حدث خطأ في تسجيل الدخول عبر Apple");
       setLoading(false);

@@ -4,6 +4,39 @@ import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+const OAUTH_PENDING_KEY = "the-special-style.oauth.pending";
+
+const OAUTH_CLEANUP_KEYS = [
+  "access_token",
+  "refresh_token",
+  "expires_at",
+  "expires_in",
+  "token_type",
+  "provider_token",
+  "provider_refresh_token",
+  "code",
+  "state",
+  "type",
+  "error",
+  "error_code",
+  "error_description",
+];
+
+const cleanOAuthUrl = () => {
+  const url = new URL(window.location.href);
+  OAUTH_CLEANUP_KEYS.forEach((key) => url.searchParams.delete(key));
+
+  const hashParams = new URLSearchParams((url.hash || "").replace(/^#/, ""));
+  OAUTH_CLEANUP_KEYS.forEach((key) => hashParams.delete(key));
+  const nextHash = hashParams.toString();
+
+  window.history.replaceState(
+    null,
+    "",
+    `${url.pathname}${url.search}${nextHash ? `#${nextHash}` : ""}`,
+  );
+};
+
 const AuthCallback = () => {
   const navigate = useNavigate();
 
@@ -16,6 +49,8 @@ const AuthCallback = () => {
       if (!isActive || completed) return;
       completed = true;
       if (timeoutId) clearTimeout(timeoutId);
+      window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
+      cleanOAuthUrl();
       toast.success("تم تسجيل الدخول بنجاح!");
       navigate("/analyze", { replace: true });
     };
@@ -24,6 +59,8 @@ const AuthCallback = () => {
       if (!isActive || completed) return;
       completed = true;
       if (timeoutId) clearTimeout(timeoutId);
+      window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
+      cleanOAuthUrl();
       toast.error(message || "حدث خطأ أثناء إتمام عملية تسجيل الدخول");
       navigate("/auth", { replace: true });
     };
@@ -73,7 +110,17 @@ const AuthCallback = () => {
 
         if (session) {
           finishSuccess();
+          return;
         }
+
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (user) {
+          finishSuccess();
+          return;
+        }
+
+        throw new Error("لم يتم إنشاء جلسة تسجيل الدخول، يرجى المحاولة مرة أخرى");
       } catch (error: any) {
         finishError(error.message);
       }
