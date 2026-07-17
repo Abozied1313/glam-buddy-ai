@@ -1,11 +1,13 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect, useRef } from "react";
 import AuthCallback from "./pages/AuthCallback";
 import AdminRoute from "./components/Auth/AdminRoute";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 // Lazy load pages for better code splitting
 const Home = lazy(() => import("./pages/Home"));
@@ -22,6 +24,112 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
 
+const OAUTH_PENDING_KEY = "the-special-style.oauth.pending";
+const OAUTH_CLEANUP_KEYS = [
+  "access_token",
+  "refresh_token",
+  "expires_at",
+  "expires_in",
+  "token_type",
+  "provider_token",
+  "provider_refresh_token",
+  "code",
+  "state",
+  "type",
+  "error",
+  "error_code",
+  "error_description",
+];
+
+const cleanOAuthUrl = () => {
+  const url = new URL(window.location.href);
+  OAUTH_CLEANUP_KEYS.forEach((key) => url.searchParams.delete(key));
+
+  const hashParams = new URLSearchParams((url.hash || "").replace(/^#/, ""));
+  OAUTH_CLEANUP_KEYS.forEach((key) => hashParams.delete(key));
+  const nextHash = hashParams.toString();
+
+  window.history.replaceState(
+    null,
+    "",
+    `${url.pathname}${url.search}${nextHash ? `#${nextHash}` : ""}`,
+  );
+};
+
+const OAuthReturnHandler = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const handledUrlRef = useRef("");
+
+  useEffect(() => {
+    if (location.pathname === "/auth/callback") return;
+
+    const currentUrl = window.location.href;
+    if (handledUrlRef.current === currentUrl) return;
+
+    const url = new URL(currentUrl);
+    const hashParams = new URLSearchParams((url.hash || "").replace(/^#/, ""));
+    const accessToken = hashParams.get("access_token") || url.searchParams.get("access_token");
+    const refreshToken = hashParams.get("refresh_token") || url.searchParams.get("refresh_token");
+    const code = url.searchParams.get("code");
+    const error = url.searchParams.get("error") || hashParams.get("error");
+    const errorDescription = url.searchParams.get("error_description") || hashParams.get("error_description");
+    const hasOAuthReturn = Boolean(error || code || (accessToken && refreshToken));
+    const hadPendingOAuth = window.sessionStorage.getItem(OAUTH_PENDING_KEY);
+
+    if (!hasOAuthReturn && !hadPendingOAuth) return;
+    handledUrlRef.current = currentUrl;
+
+    let cancelled = false;
+
+    const finishOAuthReturn = async () => {
+      try {
+        if (error) throw new Error(errorDescription || error);
+
+        if (accessToken && refreshToken) {
+          const { error: tokenSessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (tokenSessionError) throw tokenSessionError;
+        } else if (code) {
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          if (exchangeError) throw exchangeError;
+        }
+
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+
+        if (!cancelled && session?.user) {
+          window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
+          cleanOAuthUrl();
+          toast.success("تم تسجيل الدخول بنجاح!");
+          navigate("/analyze", { replace: true });
+          return;
+        }
+
+        if (hadPendingOAuth) {
+          throw new Error("لم يتم إنشاء جلسة تسجيل الدخول، يرجى المحاولة مرة أخرى");
+        }
+      } catch (oauthError: any) {
+        if (cancelled) return;
+        window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
+        cleanOAuthUrl();
+        toast.error(oauthError?.message || "حدث خطأ أثناء إتمام عملية تسجيل الدخول");
+        navigate("/auth", { replace: true });
+      }
+    };
+
+    void finishOAuthReturn();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname, location.search, location.hash, navigate]);
+
+  return null;
+};
+
 // Loading fallback component
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">
@@ -35,6 +143,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <OAuthReturnHandler />
         <Suspense fallback={<PageLoader />}>
           <Routes>
             {/* OAuth callback must be handled first and outside any protection */}
