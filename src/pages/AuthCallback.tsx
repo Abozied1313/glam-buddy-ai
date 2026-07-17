@@ -8,27 +8,57 @@ const AuthCallback = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let isActive = true;
+    let completed = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const finishSuccess = () => {
+      if (!isActive || completed) return;
+      completed = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      toast.success("تم تسجيل الدخول بنجاح!");
+      navigate("/analyze", { replace: true });
+    };
+
+    const finishError = (message?: string) => {
+      if (!isActive || completed) return;
+      completed = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      toast.error(message || "حدث خطأ أثناء إتمام عملية تسجيل الدخول");
+      navigate("/auth", { replace: true });
+    };
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session?.user) {
+        finishSuccess();
+      }
+    });
+
+    timeoutId = setTimeout(() => {
+      finishError("انتهت مهلة تسجيل الدخول، يرجى المحاولة مرة أخرى");
+    }, 15000);
+
     const handleAuthCallback = async () => {
       try {
-        // Handle PKCE code exchange if present
         const params = new URLSearchParams(window.location.search);
+        const hashParams = new URLSearchParams((window.location.hash || "").replace(/^#/, ""));
         const code = params.get("code");
-        const error = params.get("error");
-        const error_description = params.get("error_description");
+        const error = params.get("error") || hashParams.get("error");
+        const error_description = params.get("error_description") || hashParams.get("error_description");
 
         if (error) {
           throw new Error(error_description || error);
         }
 
         if (code) {
-          console.log("Exchanging code for session...");
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
           if (exchangeError) throw exchangeError;
         }
 
-        const hashParams = new URLSearchParams((window.location.hash || "").replace(/^#/, ""));
-        const accessToken = hashParams.get("access_token");
-        const refreshToken = hashParams.get("refresh_token");
+        const accessToken = hashParams.get("access_token") || params.get("access_token");
+        const refreshToken = hashParams.get("refresh_token") || params.get("refresh_token");
 
         if (accessToken && refreshToken) {
           const { error: tokenSessionError } = await supabase.auth.setSession({
@@ -38,48 +68,24 @@ const AuthCallback = () => {
           if (tokenSessionError) throw tokenSessionError;
         }
 
-        // Supabase handles hash fragments automatically, but we ensure we have a session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
         if (sessionError) throw sessionError;
 
         if (session) {
-          console.log("Session established successfully, navigating...");
-          toast.success("تم تسجيل الدخول بنجاح!");
-          // Use replace to prevent user from navigating back to callback
-          return navigate("/analyze", { replace: true });
-        } else {
-          console.log("No session yet, listening for auth state change...");
-          const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            console.log("Auth event:", event);
-            if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
-              console.log("Auth event received:", event, "Session found, navigating...");
-              toast.success("تم تسجيل الدخول بنجاح!");
-              subscription.unsubscribe();
-              return navigate("/analyze", { replace: true });
-            }
-          });
-
-          // Fallback timeout
-          const timer = setTimeout(() => {
-            subscription.unsubscribe();
-            console.log("Auth callback timed out");
-            navigate("/auth", { replace: true });
-          }, 10000);
-
-          return () => {
-            subscription.unsubscribe();
-            clearTimeout(timer);
-          };
+          finishSuccess();
         }
       } catch (error: any) {
-        console.error("Error during auth callback:", error.message);
-        toast.error(error.message || "حدث خطأ أثناء إتمام عملية تسجيل الدخول");
-        navigate("/auth", { replace: true });
+        finishError(error.message);
       }
     };
 
     handleAuthCallback();
+
+    return () => {
+      isActive = false;
+      subscription.unsubscribe();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [navigate]);
 
   return (
