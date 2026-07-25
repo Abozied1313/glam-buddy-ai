@@ -20,6 +20,7 @@ const Profile = lazy(() => import("./pages/Profile"));
 const Settings = lazy(() => import("./pages/Settings"));
 const History = lazy(() => import("./pages/History"));
 const Agent = lazy(() => import("./pages/Agent"));
+const OAuthConsent = lazy(() => import("./pages/OAuthConsent"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -148,6 +149,7 @@ const App = () => (
           <Routes>
             {/* OAuth callback must be handled first and outside any protection */}
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
             <Route path="/" element={<Home />} />
             <Route path="/features" element={<Features />} />
             <Route path="/auth" element={<Auth />} />

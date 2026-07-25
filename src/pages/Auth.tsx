@@ -23,6 +23,19 @@ const Auth = () => {
   const [fullName, setFullName] = useState("");
   const [emailSent, setEmailSent] = useState(false);
 
+  // Same-origin relative path to redirect to after sign-in (used by OAuth consent flow).
+  const nextPath = (() => {
+    const raw = new URLSearchParams(window.location.search).get("next");
+    if (!raw) return "/analyze";
+    try {
+      const decoded = decodeURIComponent(raw);
+      if (decoded.startsWith("/") && !decoded.startsWith("//")) return decoded;
+    } catch {
+      // ignore
+    }
+    return "/analyze";
+  })();
+
   useEffect(() => {
     const url = new URL(window.location.href);
     const hashParams = new URLSearchParams((url.hash || "").replace(/^#/, ""));
@@ -46,18 +59,19 @@ const Auth = () => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session?.user) {
-        navigate("/analyze", { replace: true });
+        navigate(nextPath, { replace: true });
       }
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        navigate("/analyze", { replace: true });
+        navigate(nextPath, { replace: true });
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, [navigate, nextPath]);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
