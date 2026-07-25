@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "sdk_version": "0.24.0",
+  "path": "/functions/v1/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://vmgxojtcriaapvzyyrcl.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "the-special-style-mcp",
+      "version": "0.1.0",
+      "title": "The Special Style"
+    },
+    "tools": [
+      {
+        "name": "list_style_analyses",
+        "title": "List my style analyses",
+        "description": "Lists the signed-in user's style analyses (id, occasion, gender, image URLs, created_at), newest first.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "description": "Max rows to return."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_style_analysis",
+        "title": "Get a style analysis",
+        "description": "Fetches a single style analysis owned by the signed-in user, including the full analysis_result JSON.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The style_analyses.id UUID."
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_favorites",
+        "title": "List favorites",
+        "description": "Lists the signed-in user's favorited style analyses with their full data.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "description": "Max rows to return."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "toggle_favorite",
+        "title": "Add or remove a favorite",
+        "description": "Adds the given style analysis to the signed-in user's favorites (action=add) or removes it (action=remove).",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "analysis_id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The style_analyses.id to favorite/unfavorite."
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "add",
+                "remove"
+              ],
+              "description": "Whether to add or remove the favorite."
+            }
+          },
+          "required": [
+            "analysis_id",
+            "action"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
