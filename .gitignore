@@ -12,8 +12,11 @@ dist
 dist-ssr
 *.local
 
-# Environment variables (CRITICAL: Never commit these!)
-.env
+# Environment variables
+# NOTE: `.env` holds ONLY public Vite values (Supabase URL + publishable anon key)
+# and must stay committed so production builds resolve them. Never put private
+# keys (Gemini/Lovable AI, Replicate, service_role) there - use Project Settings > Secrets.
+!.env
 .env.local
 .env.*.local
 .env.production.local
