@@ -11,7 +11,7 @@ describe('Supabase Configuration', () => {
     const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
     expect(key).toBeDefined();
     expect(key.length).toBeGreaterThan(0);
-    expect(key).toMatch(/^eyJ/); // JWT tokens start with eyJ
+    expect(key).toMatch(/^(?:eyJ|sb_publishable_)/);
   });
 
   it('should be able to create Supabase client', async () => {
@@ -24,17 +24,18 @@ describe('Supabase Configuration', () => {
     expect(client.auth).toBeDefined();
   });
 
-  it('should be able to connect to Supabase', async () => {
+  it('can read an empty local session without a network request', async () => {
     const { createClient } = await import('@supabase/supabase-js');
     const url = import.meta.env.VITE_SUPABASE_URL;
     const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
     const client = createClient(url, key);
     
-    // Test basic connectivity by checking auth state
+    // This checks local auth initialization, not live Supabase connectivity.
     const { data, error } = await client.auth.getSession();
     
     // Should not throw an error (even if no session exists)
     expect(error).toBeNull();
+    expect(data.session).toBeNull();
   });
 });
