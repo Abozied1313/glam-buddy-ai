@@ -43,7 +43,6 @@ const AuthCallback = () => {
   useEffect(() => {
     let isActive = true;
     let completed = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     const finishSuccess = () => {
       if (!isActive || completed) return;
@@ -65,6 +64,10 @@ const AuthCallback = () => {
       navigate("/auth", { replace: true });
     };
 
+    const timeoutId = setTimeout(() => {
+      finishError("انتهت مهلة تسجيل الدخول، يرجى المحاولة مرة أخرى");
+    }, 15000);
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
@@ -72,10 +75,6 @@ const AuthCallback = () => {
         finishSuccess();
       }
     });
-
-    timeoutId = setTimeout(() => {
-      finishError("انتهت مهلة تسجيل الدخول، يرجى المحاولة مرة أخرى");
-    }, 15000);
 
     const handleAuthCallback = async () => {
       try {
