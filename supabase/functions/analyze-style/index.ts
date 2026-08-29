@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
+import { getOwnedImagePath } from "./validation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -25,9 +26,6 @@ const ALLOWED_GENDERS = ["male", "female"];
 
 // UUID validation regex
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-// Extract allowed domain for URL validation
-const ALLOWED_DOMAIN = SUPABASE_URL.replace("https://", "");
 
 const SYSTEM_PROMPT = `أنت "Style Nexus" - مستشار أزياء خبير ونظام ذكاء اصطناعي للتنسيق الشخصي.
 
@@ -65,27 +63,6 @@ function isValidUUID(str: string): boolean {
   return UUID_REGEX.test(str);
 }
 
-function isValidImageUrl(url: string): boolean {
-  try {
-    const parsedUrl = new URL(url);
-    // Must be HTTPS
-    if (parsedUrl.protocol !== "https:") {
-      return false;
-    }
-    // Must be from our Supabase storage domain
-    if (!parsedUrl.hostname.includes(ALLOWED_DOMAIN.split(".")[0])) {
-      return false;
-    }
-    // Must be from analysis-images bucket
-    if (!parsedUrl.pathname.includes("/storage/v1/object/") || !parsedUrl.pathname.includes("analysis-images")) {
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function validateInput(data: any): { valid: boolean; error?: string } {
   // Check required fields exist
   if (!data.imageUrl || typeof data.imageUrl !== "string") {
@@ -99,11 +76,6 @@ function validateInput(data: any): { valid: boolean; error?: string } {
   }
   if (!data.analysisId || typeof data.analysisId !== "string") {
     return { valid: false, error: "Missing or invalid analysisId" };
-  }
-
-  // Validate imageUrl - prevent SSRF
-  if (!isValidImageUrl(data.imageUrl)) {
-    return { valid: false, error: "Invalid imageUrl: must be from allowed storage domain" };
   }
 
   // Validate occasion
@@ -229,8 +201,9 @@ function buildOutfitPrompt(outfitDetails: any[]): string {
 async function verifyAnalysisOwnership(supabase: any, analysisId: string, userId: string) {
   const { data, error } = await supabase
     .from("style_analyses")
-    .select("id,user_id,analysis_result")
+    .select("id,user_id,image_url,analysis_result")
     .eq("id", analysisId)
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (error) throw new Error("Failed to verify analysis ownership");
@@ -291,6 +264,12 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, Allow: "POST, OPTIONS", "Content-Type": "application/json" },
+    });
+  }
 
   try {
     // SECURITY: Verify authentication (explicit validation for Lovable Cloud ES256 compatibility)
@@ -324,7 +303,17 @@ serve(async (req) => {
     console.log("Authenticated user:", authenticatedUserId);
 
     // Parse request and create service role client for storage/database operations
-    const requestData = await req.json();
+    let requestData;
+    try {
+      requestData = await req.json();
+      if (!requestData || typeof requestData !== "object" || Array.isArray(requestData)) {
+        throw new Error("Expected a JSON object");
+      }
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON request" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const { action, imageUrl, occasion, gender, userId, analysisId } = requestData;
     
     // Use authenticated user ID for all operations
@@ -347,7 +336,7 @@ serve(async (req) => {
         );
       }
 
-      const existingAnalysis = await verifyAnalysisOwnership(supabase, analysisId, effectiveUserId);
+      const existingAnalysis = await verifyAnalysisOwnership(userSupabase, analysisId, effectiveUserId);
       const prediction = await fetchReplicatePrediction(predictionId);
       const existingResult = existingAnalysis.analysis_result && typeof existingAnalysis.analysis_result === "object"
         ? existingAnalysis.analysis_result
@@ -405,16 +394,22 @@ serve(async (req) => {
 
     console.log("Starting analysis for:", { occasion, gender, analysisId, userId: effectiveUserId });
 
-    // Download image from private bucket using service role client
-    // Extract the storage path from the URL
-    const storagePathMatch = imageUrl.match(/analysis-images\/(.+?)(\?|$)/);
-    if (!storagePathMatch) {
-      throw new Error("Invalid image URL format");
+    // Authenticate both the record and storage object before reading any image.
+    const storagePath = getOwnedImagePath(imageUrl, SUPABASE_URL, effectiveUserId);
+    if (!storagePath) {
+      return new Response(JSON.stringify({ error: "Invalid or unauthorized image URL" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
-    const storagePath = decodeURIComponent(storagePathMatch[1]);
-    console.log("Downloading image from storage path:", storagePath);
+    const ownedAnalysis = await verifyAnalysisOwnership(userSupabase, analysisId, effectiveUserId);
+    if (getOwnedImagePath(ownedAnalysis.image_url, SUPABASE_URL, effectiveUserId) !== storagePath) {
+      return new Response(JSON.stringify({ error: "Image does not match the analysis" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    const { data: imageData, error: downloadError } = await supabase.storage
+    // Honor Storage RLS instead of bypassing it with a service-role download.
+    const { data: imageData, error: downloadError } = await userSupabase.storage
       .from("analysis-images")
       .download(storagePath);
 
@@ -520,13 +515,7 @@ serve(async (req) => {
       }
     } catch (parseError) {
       console.error("JSON parse error:", parseError);
-      analysisResult = {
-        تحليل_المدخلات: "تم تحليل الصورة بنجاح",
-        توصيات_تسريحات_الشعر: [{ التسريحة: "تسريحة عصرية أنيقة", الملاءمة: "تناسب شكل الوجه والمناسبة" }],
-        توصيات_الملابس_والأطقم: [{ القطعة: "طقم أنيق", اللون: "ألوان محايدة", الخامة: "قماش عالي الجودة", السبب: "مناسب للمناسبة" }],
-        الأسلوب_والتنسيق_المقترح: "تنسيق عصري ومريح",
-        ملاحظات_أخلاقية_وعملية: "احرص على اختيار ملابس مريحة",
-      };
+      throw new Error("The AI service returned an invalid analysis response");
     }
 
     // Step 2: Generate image using Replicate (FLUX Kontext image editing model)

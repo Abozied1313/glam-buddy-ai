@@ -14,7 +14,7 @@ describe('Environment Variables', () => {
     expect(key).toBeDefined();
     expect(typeof key).toBe('string');
     expect(key.length).toBeGreaterThan(0);
-    expect(key).toContain('.');
+    expect(key).toMatch(/^(?:eyJ|sb_publishable_)/);
   });
 
   it('should have VITE_SUPABASE_PROJECT_ID defined', () => {
