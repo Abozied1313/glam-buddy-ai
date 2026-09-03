@@ -442,8 +442,8 @@ serve(async (req) => {
     const base64Image = btoa(binaryString);
     const mimeType = imageData.type || "image/jpeg";
 
-    // Build a base64 data URI for Replicate input — avoids needing public bucket access
-    const replicateInputImageUrl = `data:${mimeType};base64,${base64Image}`;
+    // Build a base64 data URI for the image model input
+    const inputImageDataUri = `data:${mimeType};base64,${base64Image}`;
 
     // Step 1: Get style analysis from Lovable AI
     const occasionLabels: Record<string, string> = {
@@ -529,10 +529,10 @@ serve(async (req) => {
       };
     }
 
-    // Step 2: Generate image using Replicate (FLUX Kontext image editing model)
+    // Step 2: Generate image using Lovable AI image editing model
     let generatedImageUrl: string | null = null;
 
-    console.log("Generating face-preserving image with FLUX Kontext Pro...");
+    console.log("Generating face-preserving image with Lovable AI...");
 
     // Build dynamic prompt based on gender and analysis
     const outfitDetails = analysisResult.توصيات_الملابس_والأطقم || [];
