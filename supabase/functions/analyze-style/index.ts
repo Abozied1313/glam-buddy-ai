@@ -356,8 +356,26 @@ serve(async (req) => {
     if (!analysisResponse.ok) {
       const errorText = await analysisResponse.text();
       console.error("Lovable AI error:", errorText);
+
+      if (analysisResponse.status === 402) {
+        return new Response(
+          JSON.stringify({
+            error: "لا يوجد رصيد كافٍ في مساحة عمل Lovable AI. يرجى إضافة رصيد ثم إعادة المحاولة.",
+          }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (analysisResponse.status === 429) {
+        return new Response(
+          JSON.stringify({ error: "تم تجاوز حد الطلبات مؤقتًا. يرجى المحاولة بعد قليل." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       throw new Error("Failed to get style analysis");
     }
+
 
     const analysisData = await analysisResponse.json();
     const analysisText = analysisData.choices?.[0]?.message?.content || "";
