@@ -267,7 +267,20 @@ serve(async (req) => {
       throw new Error("Invalid image URL format");
     }
     const storagePath = decodeURIComponent(storagePathMatch[1]);
+
+    // Ownership check: the storage path must belong to the authenticated caller
+    const pathSegments = storagePath.split("/");
+    const ownerSegment = pathSegments[0] === "generated" ? pathSegments[1] : pathSegments[0];
+    if (ownerSegment !== effectiveUserId) {
+      console.error("Storage path ownership mismatch");
+      return new Response(
+        JSON.stringify({ error: "غير مصرح بالوصول إلى هذه الصورة." }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     console.log("Downloading image from storage path:", storagePath);
+
 
     const { data: imageData, error: downloadError } = await supabase.storage
       .from("analysis-images")
