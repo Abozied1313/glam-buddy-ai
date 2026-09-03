@@ -7,7 +7,6 @@ import { Heart, ArrowRight, Loader2, RefreshCw, ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
 import { useRefreshSignedUrls } from "@/hooks/useRefreshSignedUrls";
-import { pollReplicateImageGeneration } from "@/lib/replicatePolling";
 interface AnalysisResult {
   تحليل_المدخلات: string;
   توصيات_تسريحات_الشعر: Array<{
@@ -136,24 +135,7 @@ const Results = () => {
 
       if (functionError) throw functionError;
 
-      let finalFunctionData = functionData;
-      if (!functionData.generated_image_url && functionData.replicate_prediction_id) {
-        await supabase
-          .from("style_analyses")
-          .update({ analysis_result: functionData, generated_image_url: null })
-          .eq("id", id);
-
-        try {
-          toast.loading("جاري توليد الصورة المقترحة...", { id: "image-generation" });
-          const pollData = await pollReplicateImageGeneration(
-            analysis.id,
-            functionData.replicate_prediction_id
-          );
-          finalFunctionData = pollData.analysis_result || { ...functionData, generated_image_url: pollData.generated_image_url };
-        } finally {
-          toast.dismiss("image-generation");
-        }
-      }
+      const finalFunctionData = functionData;
 
       // Update analysis with new results
       const { error: updateError } = await supabase

@@ -7,16 +7,10 @@ const corsHeaders = {
 };
 
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-const REPLICATE_API_TOKEN = Deno.env.get("REPLICATE_API_TOKEN");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const REPLICATE_MODEL_OWNER = "black-forest-labs";
-const REPLICATE_MODEL_NAME = "flux-kontext-max";
-const REPLICATE_MODEL_PREDICTIONS_ENDPOINT = `https://api.replicate.com/v1/models/${REPLICATE_MODEL_OWNER}/${REPLICATE_MODEL_NAME}/predictions`;
-const REPLICATE_PREDICTIONS_ENDPOINT = "https://api.replicate.com/v1/predictions";
-const REPLICATE_TERMINAL_STATUSES = new Set(["succeeded", "failed", "canceled"]);
 const MAX_INPUT_IMAGE_BYTES = 10 * 1024 * 1024;
 
 // Allowed values for validation
@@ -124,80 +118,6 @@ function validateInput(data: any): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-function extractReplicateImageUrl(output: unknown): string | null {
-  if (!output) return null;
-
-  if (typeof output === "string") {
-    return output.startsWith("http") ? output : null;
-  }
-
-  if (Array.isArray(output)) {
-    for (const item of output) {
-      const url = extractReplicateImageUrl(item);
-      if (url) return url;
-    }
-    return null;
-  }
-
-  if (typeof output === "object") {
-    const value = output as Record<string, unknown>;
-    return extractReplicateImageUrl(value.url ?? value.image ?? value.output);
-  }
-
-  return null;
-}
-
-function getReplicateErrorMessage(payload: any): string {
-  const detail = payload?.detail;
-  if (typeof payload?.error === "string") return payload.error;
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) {
-    return detail
-      .map((item) => item?.msg || item?.message || JSON.stringify(item))
-      .filter(Boolean)
-      .join("; ");
-  }
-  if (payload?.error) return JSON.stringify(payload.error);
-  if (detail) return JSON.stringify(detail);
-  return "Unknown Replicate API error";
-}
-
-async function readReplicateJson(response: Response, context: string) {
-  const responseText = await response.text();
-  let payload: any = null;
-
-  try {
-    payload = responseText ? JSON.parse(responseText) : null;
-  } catch (_error) {
-    console.error(`${context} returned non-JSON response:`, responseText);
-  }
-
-  if (!response.ok) {
-    console.error(`${context} failed:`, response.status, responseText);
-    throw new Error(`${context} failed (${response.status}): ${getReplicateErrorMessage(payload)}`);
-  }
-
-  if (!payload) {
-    throw new Error(`${context} returned an empty response`);
-  }
-
-  return payload;
-}
-
-async function fetchReplicatePrediction(predictionId: string) {
-  const pollResponse = await fetch(`${REPLICATE_PREDICTIONS_ENDPOINT}/${encodeURIComponent(predictionId)}`, {
-    headers: {
-      Authorization: `Bearer ${REPLICATE_API_TOKEN}`,
-    },
-  });
-
-  return readReplicateJson(pollResponse, "Replicate polling");
-}
-
-function isValidReplicatePredictionId(predictionId: string): boolean {
-  return /^[a-zA-Z0-9_-]{8,128}$/.test(predictionId);
-}
-
 function normalizePromptValue(value: unknown): string {
   return String(value ?? "")
     .replace(/[\r\n]+/g, " ")
@@ -239,35 +159,23 @@ async function verifyAnalysisOwnership(supabase: any, analysisId: string, userId
   return data;
 }
 
-async function saveReplicateOutputImage(supabase: any, effectiveUserId: string, output: unknown) {
-  const generatedImage = extractReplicateImageUrl(output);
-  if (!generatedImage) {
-    throw new Error("Could not extract image URL from Replicate response");
+async function saveGeneratedDataUri(supabase: any, effectiveUserId: string, dataUri: string) {
+  const match = dataUri.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) {
+    throw new Error("Invalid generated image payload");
   }
 
-  console.log("Generated image received from Replicate, downloading...");
-  let imageResponse = await fetch(generatedImage, {
-    headers: { Authorization: `Bearer ${REPLICATE_API_TOKEN}` },
-  });
+  const contentType = match[1];
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-  if (!imageResponse.ok) {
-    imageResponse = await fetch(generatedImage);
-  }
+  const extension = contentType === "image/jpeg" ? "jpg" : contentType.split("/")[1] || "png";
+  const fileName = `generated/${effectiveUserId}/${Date.now()}.${extension}`;
 
-  if (!imageResponse.ok) {
-    const downloadErrorText = await imageResponse.text();
-    console.error("Failed to download generated image:", imageResponse.status, downloadErrorText);
-    throw new Error(`Failed to download generated image (${imageResponse.status})`);
-  }
-
-  const arrayBuffer = await imageResponse.arrayBuffer();
-  const imageBlob = new Blob([arrayBuffer], { type: "image/jpeg" });
-  const fileName = `generated/${effectiveUserId}/${Date.now()}.jpg`;
   const { error: uploadError } = await supabase.storage
     .from("analysis-images")
-    .upload(fileName, imageBlob, {
-      contentType: "image/jpeg",
-    });
+    .upload(fileName, new Blob([bytes], { type: contentType }), { contentType });
 
   if (uploadError) {
     console.error("Upload error:", uploadError);
@@ -331,59 +239,6 @@ serve(async (req) => {
     const effectiveUserId = authenticatedUserId;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    if (action === "poll_replicate") {
-      const predictionId = requestData.predictionId;
-      if (!analysisId || !isValidUUID(analysisId) || !predictionId || !isValidReplicatePredictionId(predictionId)) {
-        return new Response(
-          JSON.stringify({ error: "Missing or invalid analysisId/predictionId" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      if (!REPLICATE_API_TOKEN) {
-        return new Response(
-          JSON.stringify({ error: "خدمة توليد الصور غير مهيأة. يرجى إضافة REPLICATE_API_TOKEN." }),
-          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const existingAnalysis = await verifyAnalysisOwnership(supabase, analysisId, effectiveUserId);
-      const prediction = await fetchReplicatePrediction(predictionId);
-      const existingResult = existingAnalysis.analysis_result && typeof existingAnalysis.analysis_result === "object"
-        ? existingAnalysis.analysis_result
-        : {};
-
-      if (prediction.status === "succeeded" && prediction.output) {
-        const generatedImageUrl = await saveReplicateOutputImage(supabase, effectiveUserId, prediction.output);
-        const result = {
-          ...existingResult,
-          generated_image_url: generatedImageUrl,
-          image_generation_error: null,
-          replicate_prediction_id: prediction.id,
-          replicate_status: prediction.status,
-        };
-
-        await supabase
-          .from("style_analyses")
-          .update({ analysis_result: result, generated_image_url: generatedImageUrl })
-          .eq("id", analysisId);
-
-        return new Response(JSON.stringify({ status: prediction.status, generated_image_url: generatedImageUrl, analysis_result: result }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      if (prediction.status === "failed" || prediction.status === "canceled") {
-        const imageGenerationError = `Replicate ${prediction.status}: ${prediction.error || "unknown error"}`;
-        const result = { ...existingResult, image_generation_error: imageGenerationError, replicate_status: prediction.status };
-        await supabase.from("style_analyses").update({ analysis_result: result }).eq("id", analysisId);
-      }
-
-      return new Response(JSON.stringify({ status: prediction.status, error: prediction.error || null }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     // SECURITY: Validate all inputs
     const validation = validateInput(requestData);
     if (!validation.valid) {
@@ -442,8 +297,8 @@ serve(async (req) => {
     const base64Image = btoa(binaryString);
     const mimeType = imageData.type || "image/jpeg";
 
-    // Build a base64 data URI for Replicate input — avoids needing public bucket access
-    const replicateInputImageUrl = `data:${mimeType};base64,${base64Image}`;
+    // Build a base64 data URI for the image model input
+    const inputImageDataUri = `data:${mimeType};base64,${base64Image}`;
 
     // Step 1: Get style analysis from Lovable AI
     const occasionLabels: Record<string, string> = {
@@ -529,10 +384,10 @@ serve(async (req) => {
       };
     }
 
-    // Step 2: Generate image using Replicate (FLUX Kontext image editing model)
+    // Step 2: Generate image using Lovable AI image editing model
     let generatedImageUrl: string | null = null;
 
-    console.log("Generating face-preserving image with FLUX Kontext Pro...");
+    console.log("Generating face-preserving image with Lovable AI...");
 
     // Build dynamic prompt based on gender and analysis
     const outfitDetails = analysisResult.توصيات_الملابس_والأطقم || [];
@@ -562,52 +417,52 @@ serve(async (req) => {
 
     console.log("Image generation prompt:", stylePrompt);
 
-    if (!REPLICATE_API_TOKEN) {
-      console.error("REPLICATE_API_TOKEN is not configured");
-      return new Response(
-        JSON.stringify({
-          error: "خدمة توليد الصور غير مهيأة. يرجى إضافة REPLICATE_API_TOKEN.",
-        }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     let imageGenerationError: string | null = null;
-    let replicatePredictionId: string | null = null;
-    let replicateStatus: string | null = null;
     try {
-      // Use the model-specific predictions endpoint for official models (no `version` needed).
-      console.log("Calling Replicate model endpoint:", REPLICATE_MODEL_PREDICTIONS_ENDPOINT);
-      const replicateResponse = await fetch(REPLICATE_MODEL_PREDICTIONS_ENDPOINT, {
+      console.log("Calling Lovable AI image model for face-preserving edit...");
+      const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
           "Content-Type": "application/json",
-          "Prefer": "wait=60",
         },
         body: JSON.stringify({
-          input: {
-            prompt: stylePrompt,
-            input_image: replicateInputImageUrl,
-            aspect_ratio: "match_input_image",
-            output_format: "png",
-            safety_tolerance: 2,
-            prompt_upsampling: false,
-          },
+          model: "google/gemini-3-pro-image",
+          modalities: ["image", "text"],
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: stylePrompt },
+                { type: "image_url", image_url: { url: inputImageDataUri } },
+              ],
+            },
+          ],
         }),
       });
 
-      const prediction = await readReplicateJson(replicateResponse, "Replicate prediction creation");
-      console.log("Replicate prediction created:", { id: prediction.id, status: prediction.status });
-      replicatePredictionId = prediction.id || null;
-      replicateStatus = prediction.status || null;
-
-      if (prediction.status === "succeeded" && prediction.output) {
-        generatedImageUrl = await saveReplicateOutputImage(supabase, effectiveUserId, prediction.output);
+      if (!imageResponse.ok) {
+        const errorText = await imageResponse.text();
+        console.error("Lovable AI image error:", imageResponse.status, errorText);
+        if (imageResponse.status === 429) {
+          imageGenerationError = "تم تجاوز حد الطلبات لتوليد الصور. يرجى المحاولة بعد قليل.";
+        } else if (imageResponse.status === 402) {
+          imageGenerationError = "رصيد الذكاء الاصطناعي غير كافٍ لتوليد الصور. يرجى إضافة رصيد.";
+        } else {
+          imageGenerationError = `Image generation failed (${imageResponse.status})`;
+        }
       } else {
-        if (prediction.status === "failed" || prediction.status === "canceled") {
-          console.error("Replicate prediction failed:", prediction.status, prediction.error);
-          imageGenerationError = `Replicate ${prediction.status}: ${prediction.error || "unknown error"}`;
+        const imageData = await imageResponse.json();
+        const generatedDataUri =
+          imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url ||
+          imageData?.choices?.[0]?.message?.image_url?.url ||
+          null;
+
+        if (!generatedDataUri) {
+          console.error("No image returned from Lovable AI");
+          imageGenerationError = "لم يتم إنشاء الصورة. يرجى المحاولة مرة أخرى.";
+        } else {
+          generatedImageUrl = await saveGeneratedDataUri(supabase, effectiveUserId, generatedDataUri);
         }
       }
     } catch (imageError: any) {
@@ -619,9 +474,8 @@ serve(async (req) => {
       ...analysisResult,
       generated_image_url: generatedImageUrl,
       image_generation_error: imageGenerationError,
-      replicate_prediction_id: replicatePredictionId,
-      replicate_status: replicateStatus,
     };
+
 
     console.log("Analysis complete");
 
