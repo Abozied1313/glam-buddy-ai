@@ -562,52 +562,52 @@ serve(async (req) => {
 
     console.log("Image generation prompt:", stylePrompt);
 
-    if (!REPLICATE_API_TOKEN) {
-      console.error("REPLICATE_API_TOKEN is not configured");
-      return new Response(
-        JSON.stringify({
-          error: "خدمة توليد الصور غير مهيأة. يرجى إضافة REPLICATE_API_TOKEN.",
-        }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     let imageGenerationError: string | null = null;
-    let replicatePredictionId: string | null = null;
-    let replicateStatus: string | null = null;
     try {
-      // Use the model-specific predictions endpoint for official models (no `version` needed).
-      console.log("Calling Replicate model endpoint:", REPLICATE_MODEL_PREDICTIONS_ENDPOINT);
-      const replicateResponse = await fetch(REPLICATE_MODEL_PREDICTIONS_ENDPOINT, {
+      console.log("Calling Lovable AI image model for face-preserving edit...");
+      const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
           "Content-Type": "application/json",
-          "Prefer": "wait=60",
         },
         body: JSON.stringify({
-          input: {
-            prompt: stylePrompt,
-            input_image: replicateInputImageUrl,
-            aspect_ratio: "match_input_image",
-            output_format: "png",
-            safety_tolerance: 2,
-            prompt_upsampling: false,
-          },
+          model: "google/gemini-3-pro-image",
+          modalities: ["image", "text"],
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: stylePrompt },
+                { type: "image_url", image_url: { url: inputImageDataUri } },
+              ],
+            },
+          ],
         }),
       });
 
-      const prediction = await readReplicateJson(replicateResponse, "Replicate prediction creation");
-      console.log("Replicate prediction created:", { id: prediction.id, status: prediction.status });
-      replicatePredictionId = prediction.id || null;
-      replicateStatus = prediction.status || null;
-
-      if (prediction.status === "succeeded" && prediction.output) {
-        generatedImageUrl = await saveReplicateOutputImage(supabase, effectiveUserId, prediction.output);
+      if (!imageResponse.ok) {
+        const errorText = await imageResponse.text();
+        console.error("Lovable AI image error:", imageResponse.status, errorText);
+        if (imageResponse.status === 429) {
+          imageGenerationError = "تم تجاوز حد الطلبات لتوليد الصور. يرجى المحاولة بعد قليل.";
+        } else if (imageResponse.status === 402) {
+          imageGenerationError = "رصيد الذكاء الاصطناعي غير كافٍ لتوليد الصور. يرجى إضافة رصيد.";
+        } else {
+          imageGenerationError = `Image generation failed (${imageResponse.status})`;
+        }
       } else {
-        if (prediction.status === "failed" || prediction.status === "canceled") {
-          console.error("Replicate prediction failed:", prediction.status, prediction.error);
-          imageGenerationError = `Replicate ${prediction.status}: ${prediction.error || "unknown error"}`;
+        const imageData = await imageResponse.json();
+        const generatedDataUri =
+          imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url ||
+          imageData?.choices?.[0]?.message?.image_url?.url ||
+          null;
+
+        if (!generatedDataUri) {
+          console.error("No image returned from Lovable AI");
+          imageGenerationError = "لم يتم إنشاء الصورة. يرجى المحاولة مرة أخرى.";
+        } else {
+          generatedImageUrl = await saveGeneratedDataUri(supabase, effectiveUserId, generatedDataUri);
         }
       }
     } catch (imageError: any) {
@@ -619,9 +619,8 @@ serve(async (req) => {
       ...analysisResult,
       generated_image_url: generatedImageUrl,
       image_generation_error: imageGenerationError,
-      replicate_prediction_id: replicatePredictionId,
-      replicate_status: replicateStatus,
     };
+
 
     console.log("Analysis complete");
 
