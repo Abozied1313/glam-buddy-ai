@@ -41,6 +41,9 @@ const Auth = () => {
     const hashParams = new URLSearchParams((url.hash || "").replace(/^#/, ""));
     const q = url.searchParams;
 
+    // Opened from the native app: after login we hand the session back to it.
+    if (q.get("native") === "1") markNativeHandoff();
+
     const oauthError = q.get("error") || hashParams.get("error");
     const oauthErrorDescription =
       q.get("error_description") || hashParams.get("error_description");
@@ -59,15 +62,18 @@ const Auth = () => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session?.user) {
+        if (handoffSessionToNativeApp(session as any)) return;
         navigate(nextPath, { replace: true });
       }
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
+        if (handoffSessionToNativeApp(session as any)) return;
         navigate(nextPath, { replace: true });
       }
     });
+
 
     return () => subscription.unsubscribe();
   }, [navigate, nextPath]);
