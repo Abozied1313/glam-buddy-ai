@@ -201,6 +201,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <OAuthReturnHandler />
+        <NativeDeepLinkHandler />
         <Suspense fallback={<PageLoader />}>
           <Routes>
             {/* OAuth callback must be handled first and outside any protection */}
