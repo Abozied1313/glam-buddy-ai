@@ -132,6 +132,15 @@ const Auth = () => {
     if (e) e.preventDefault();
     try {
       setLoading(true);
+
+      // Native apps cannot receive the OAuth redirect directly, so we run the
+      // handshake in the system browser and get the session back via deep link.
+      if (isNativeApp()) {
+        await Browser.open({ url: `${WEB_ORIGIN}/auth?native=1`, presentationStyle: "popover" });
+        setLoading(false);
+        return;
+      }
+
       window.sessionStorage.setItem(OAUTH_PENDING_KEY, "google");
       const result = await lovable.auth.signInWithOAuth("google", {
         redirect_uri: `${window.location.origin}/auth/callback`,
