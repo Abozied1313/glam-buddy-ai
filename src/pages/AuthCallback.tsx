@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { handoffSessionToNativeApp } from "@/lib/nativeAuth";
 
 const OAUTH_PENDING_KEY = "the-special-style.oauth.pending";
 
@@ -45,11 +46,13 @@ const AuthCallback = () => {
     let completed = false;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-    const finishSuccess = () => {
+    const finishSuccess = async () => {
       if (!isActive || completed) return;
       completed = true;
       if (timeoutId) clearTimeout(timeoutId);
       window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (handoffSessionToNativeApp(session as any)) return;
       cleanOAuthUrl();
       toast.success("تم تسجيل الدخول بنجاح!");
       navigate("/analyze", { replace: true });

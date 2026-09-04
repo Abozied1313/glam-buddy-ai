@@ -11,6 +11,13 @@ import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
 import { ArrowRight, Mail, Loader2, Phone } from "lucide-react";
 import PhoneLogin from "@/components/Auth/PhoneLogin";
+import { Browser } from "@capacitor/browser";
+import {
+  WEB_ORIGIN,
+  isNativeApp,
+  markNativeHandoff,
+  handoffSessionToNativeApp,
+} from "@/lib/nativeAuth";
 
 const OAUTH_PENDING_KEY = "the-special-style.oauth.pending";
 
@@ -41,6 +48,9 @@ const Auth = () => {
     const hashParams = new URLSearchParams((url.hash || "").replace(/^#/, ""));
     const q = url.searchParams;
 
+    // Opened from the native app: after login we hand the session back to it.
+    if (q.get("native") === "1") markNativeHandoff();
+
     const oauthError = q.get("error") || hashParams.get("error");
     const oauthErrorDescription =
       q.get("error_description") || hashParams.get("error_description");
@@ -59,15 +69,18 @@ const Auth = () => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session?.user) {
+        if (handoffSessionToNativeApp(session as any)) return;
         navigate(nextPath, { replace: true });
       }
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
+        if (handoffSessionToNativeApp(session as any)) return;
         navigate(nextPath, { replace: true });
       }
     });
+
 
     return () => subscription.unsubscribe();
   }, [navigate, nextPath]);
@@ -119,6 +132,15 @@ const Auth = () => {
     if (e) e.preventDefault();
     try {
       setLoading(true);
+
+      // Native apps cannot receive the OAuth redirect directly, so we run the
+      // handshake in the system browser and get the session back via deep link.
+      if (isNativeApp()) {
+        await Browser.open({ url: `${WEB_ORIGIN}/auth?native=1`, presentationStyle: "popover" });
+        setLoading(false);
+        return;
+      }
+
       window.sessionStorage.setItem(OAUTH_PENDING_KEY, "google");
       const result = await lovable.auth.signInWithOAuth("google", {
         redirect_uri: `${window.location.origin}/auth/callback`,

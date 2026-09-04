@@ -8,6 +8,62 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { App as CapApp } from "@capacitor/app";
+import { Browser } from "@capacitor/browser";
+import { isNativeApp } from "@/lib/nativeAuth";
+
+// Receives the session from the system browser via the app's custom URL scheme.
+const NativeDeepLinkHandler = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    let removeListener: (() => void) | undefined;
+
+    const setup = async () => {
+      const handle = await CapApp.addListener("appUrlOpen", async ({ url }) => {
+        if (!url || !url.includes("auth/callback")) return;
+        try {
+          const parsed = new URL(url);
+          const params = new URLSearchParams(
+            (parsed.hash || "").replace(/^#/, "") || parsed.search.replace(/^\?/, ""),
+          );
+          const access_token = params.get("access_token");
+          const refresh_token = params.get("refresh_token");
+          const code = params.get("code");
+
+          if (access_token && refresh_token) {
+            const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+            if (error) throw error;
+          } else if (code) {
+            const { error } = await supabase.auth.exchangeCodeForSession(code);
+            if (error) throw error;
+          } else {
+            throw new Error("لم يتم استلام بيانات تسجيل الدخول");
+          }
+
+          toast.success("تم تسجيل الدخول بنجاح!");
+          navigate("/analyze", { replace: true });
+        } catch (error: any) {
+          toast.error(error?.message || "حدث خطأ أثناء إتمام تسجيل الدخول");
+        } finally {
+          try {
+            await Browser.close();
+          } catch {
+            // browser may already be closed
+          }
+        }
+      });
+      removeListener = () => handle.remove();
+    };
+
+    void setup();
+    return () => removeListener?.();
+  }, [navigate]);
+
+  return null;
+};
+
 
 // Lazy load pages for better code splitting
 const Home = lazy(() => import("./pages/Home"));
@@ -145,6 +201,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <OAuthReturnHandler />
+        <NativeDeepLinkHandler />
         <Suspense fallback={<PageLoader />}>
           <Routes>
             {/* OAuth callback must be handled first and outside any protection */}
