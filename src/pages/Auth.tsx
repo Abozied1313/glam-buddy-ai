@@ -11,6 +11,13 @@ import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
 import { ArrowRight, Mail, Loader2, Phone } from "lucide-react";
 import PhoneLogin from "@/components/Auth/PhoneLogin";
+import { Browser } from "@capacitor/browser";
+import {
+  WEB_ORIGIN,
+  isNativeApp,
+  markNativeHandoff,
+  handoffSessionToNativeApp,
+} from "@/lib/nativeAuth";
 
 const OAUTH_PENDING_KEY = "the-special-style.oauth.pending";
 
