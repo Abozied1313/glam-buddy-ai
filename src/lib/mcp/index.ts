@@ -7,8 +7,8 @@ import toggleFavoriteTool from "./tools/toggle-favorite";
 const projectRef = import.meta.env.VITE_SUPABASE_PROJECT_ID ?? "project-ref-unset";
 
 export default defineMcp({
-  name: "the-special-style-mcp",
-  title: "The Special Style",
+  name: "style-ai-assistant",
+  title: "Style AI Assistant",
   version: "0.1.0",
   instructions:
     "Tools for The Special Style. Use list_style_analyses / get_style_analysis to read the signed-in user's outfit analyses, and list_favorites / toggle_favorite to manage their favorites.",
