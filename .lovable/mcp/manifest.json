@@ -11,9 +11,9 @@
   },
   "mcp": {
     "server": {
-      "name": "the-special-style-mcp",
+      "name": "style-ai-assistant",
       "version": "0.1.0",
-      "title": "The Special Style"
+      "title": "Style AI Assistant"
     },
     "tools": [
       {

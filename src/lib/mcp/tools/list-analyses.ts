@@ -1,13 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
-import { defineTool, type ToolContext } from "@lovable.dev/mcp-js";
+import { defineTool } from "@lovable.dev/mcp-js";
+import { supabaseForUser } from "../supabase";
 import { z } from "zod";
-
-function clientFor(ctx: ToolContext) {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_PUBLISHABLE_KEY!, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
 
 export default defineTool({
   name: "list_style_analyses",
@@ -21,7 +14,7 @@ export default defineTool({
   handler: async ({ limit }, ctx) => {
     if (!ctx.isAuthenticated())
       return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
-    const { data, error } = await clientFor(ctx)
+    const { data, error } = await supabaseForUser(ctx)
       .from("style_analyses")
       .select("id, occasion, gender, image_url, generated_image_url, created_at")
       .order("created_at", { ascending: false })

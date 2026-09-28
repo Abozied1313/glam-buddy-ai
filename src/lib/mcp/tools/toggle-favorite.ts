@@ -1,13 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
-import { defineTool, type ToolContext } from "@lovable.dev/mcp-js";
+import { defineTool } from "@lovable.dev/mcp-js";
+import { supabaseForUser } from "../supabase";
 import { z } from "zod";
-
-function clientFor(ctx: ToolContext) {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_PUBLISHABLE_KEY!, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
 
 export default defineTool({
   name: "toggle_favorite",
@@ -22,7 +15,7 @@ export default defineTool({
   handler: async ({ analysis_id, action }, ctx) => {
     if (!ctx.isAuthenticated())
       return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
-    const supabase = clientFor(ctx);
+    const supabase = supabaseForUser(ctx);
     if (action === "add") {
       const { data, error } = await supabase
         .from("favorites")
