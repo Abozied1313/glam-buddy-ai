@@ -6,15 +6,56 @@
 import { auth, defineMcp } from "npm:@lovable.dev/mcp-js@0.24.0";
 
 // src/lib/mcp/tools/list-analyses.ts
-import { createClient } from "npm:@supabase/supabase-js@^2.78.0";
 import { defineTool } from "npm:@lovable.dev/mcp-js@0.24.0";
-import { z } from "npm:zod@^3.25.76";
-function clientFor(ctx) {
-  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
+
+// src/lib/mcp/supabase.ts
+import { createClient } from "npm:@supabase/supabase-js@^2.78.0";
+function runtimeEnv(name) {
+  const runtime = globalThis;
+  return runtime.Deno?.env?.get?.(name) ?? runtime.process?.env?.[name];
+}
+function configuredEnv(names) {
+  for (const name of names) {
+    const value = runtimeEnv(name)?.trim();
+    if (value) return value;
+  }
+  return void 0;
+}
+function supabaseProjectUrl() {
+  const url = configuredEnv(["SUPABASE_URL", "VITE_SUPABASE_URL"]);
+  if (!url) throw new Error("SUPABASE_URL is required");
+  return url;
+}
+function supabasePublishableKey() {
+  const direct = configuredEnv(["SUPABASE_PUBLISHABLE_KEY", "VITE_SUPABASE_PUBLISHABLE_KEY"]);
+  if (direct) return direct;
+  const keyset = runtimeEnv("SUPABASE_PUBLISHABLE_KEYS");
+  if (keyset) {
+    try {
+      const parsed = JSON.parse(keyset);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const keys = parsed;
+        const key = [keys.default, ...Object.values(keys)].find((v) => typeof v === "string" && v.trim().startsWith("sb_publishable_"))?.trim();
+        if (key) return key;
+      }
+    } catch {
+    }
+  }
+  const legacy = configuredEnv(["SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY"]);
+  if (legacy) return legacy;
+  throw new Error("Supabase publishable key is required");
+}
+function supabaseForUser(ctx) {
+  const token = ctx.getToken();
+  if (!token) throw new Error("supabaseForUser requires a verified OAuth token");
+  return createClient(supabaseProjectUrl(), supabasePublishableKey(), {
+    global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false, autoRefreshToken: false }
   });
 }
+
+// src/lib/mcp/tools/list-analyses.ts
+import { z } from "npm:zod@^3.25.76";
 var list_analyses_default = defineTool({
   name: "list_style_analyses",
   title: "List my style analyses",
@@ -26,7 +67,7 @@ var list_analyses_default = defineTool({
   handler: async ({ limit }, ctx) => {
     if (!ctx.isAuthenticated())
       return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
-    const { data, error } = await clientFor(ctx).from("style_analyses").select("id, occasion, gender, image_url, generated_image_url, created_at").order("created_at", { ascending: false }).limit(limit);
+    const { data, error } = await supabaseForUser(ctx).from("style_analyses").select("id, occasion, gender, image_url, generated_image_url, created_at").order("created_at", { ascending: false }).limit(limit);
     if (error)
       return { content: [{ type: "text", text: error.message }], isError: true };
     return {
@@ -37,15 +78,8 @@ var list_analyses_default = defineTool({
 });
 
 // src/lib/mcp/tools/get-analysis.ts
-import { createClient as createClient2 } from "npm:@supabase/supabase-js@^2.78.0";
 import { defineTool as defineTool2 } from "npm:@lovable.dev/mcp-js@0.24.0";
 import { z as z2 } from "npm:zod@^3.25.76";
-function clientFor2(ctx) {
-  return createClient2(process.env.SUPABASE_URL, process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
 var get_analysis_default = defineTool2({
   name: "get_style_analysis",
   title: "Get a style analysis",
@@ -57,7 +91,7 @@ var get_analysis_default = defineTool2({
   handler: async ({ id }, ctx) => {
     if (!ctx.isAuthenticated())
       return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
-    const { data, error } = await clientFor2(ctx).from("style_analyses").select("*").eq("id", id).maybeSingle();
+    const { data, error } = await supabaseForUser(ctx).from("style_analyses").select("*").eq("id", id).maybeSingle();
     if (error)
       return { content: [{ type: "text", text: error.message }], isError: true };
     if (!data)
@@ -70,15 +104,8 @@ var get_analysis_default = defineTool2({
 });
 
 // src/lib/mcp/tools/list-favorites.ts
-import { createClient as createClient3 } from "npm:@supabase/supabase-js@^2.78.0";
 import { defineTool as defineTool3 } from "npm:@lovable.dev/mcp-js@0.24.0";
 import { z as z3 } from "npm:zod@^3.25.76";
-function clientFor3(ctx) {
-  return createClient3(process.env.SUPABASE_URL, process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
 var list_favorites_default = defineTool3({
   name: "list_favorites",
   title: "List favorites",
@@ -90,7 +117,7 @@ var list_favorites_default = defineTool3({
   handler: async ({ limit }, ctx) => {
     if (!ctx.isAuthenticated())
       return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
-    const { data, error } = await clientFor3(ctx).from("favorites").select("id, created_at, style_analyses(*)").order("created_at", { ascending: false }).limit(limit);
+    const { data, error } = await supabaseForUser(ctx).from("favorites").select("id, created_at, style_analyses(*)").order("created_at", { ascending: false }).limit(limit);
     if (error)
       return { content: [{ type: "text", text: error.message }], isError: true };
     return {
@@ -101,15 +128,8 @@ var list_favorites_default = defineTool3({
 });
 
 // src/lib/mcp/tools/toggle-favorite.ts
-import { createClient as createClient4 } from "npm:@supabase/supabase-js@^2.78.0";
 import { defineTool as defineTool4 } from "npm:@lovable.dev/mcp-js@0.24.0";
 import { z as z4 } from "npm:zod@^3.25.76";
-function clientFor4(ctx) {
-  return createClient4(process.env.SUPABASE_URL, process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
 var toggle_favorite_default = defineTool4({
   name: "toggle_favorite",
   title: "Add or remove a favorite",
@@ -122,7 +142,7 @@ var toggle_favorite_default = defineTool4({
   handler: async ({ analysis_id, action }, ctx) => {
     if (!ctx.isAuthenticated())
       return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
-    const supabase = clientFor4(ctx);
+    const supabase = supabaseForUser(ctx);
     if (action === "add") {
       const { data, error: error2 } = await supabase.from("favorites").upsert(
         { user_id: ctx.getUserId(), analysis_id },
@@ -147,8 +167,8 @@ var toggle_favorite_default = defineTool4({
 // src/lib/mcp/index.ts
 var projectRef = "vmgxojtcriaapvzyyrcl";
 var mcp_default = defineMcp({
-  name: "the-special-style-mcp",
-  title: "The Special Style",
+  name: "style-ai-assistant",
+  title: "Style AI Assistant",
   version: "0.1.0",
   instructions: "Tools for The Special Style. Use list_style_analyses / get_style_analysis to read the signed-in user's outfit analyses, and list_favorites / toggle_favorite to manage their favorites.",
   auth: auth.oauth.issuer({
