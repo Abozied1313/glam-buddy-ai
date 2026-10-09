@@ -352,7 +352,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-3.5-flash",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           {
@@ -458,7 +458,7 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3-pro-image",
+          model: "google/gemini-3.1-flash-image",
           modalities: ["image", "text"],
           messages: [
             {
