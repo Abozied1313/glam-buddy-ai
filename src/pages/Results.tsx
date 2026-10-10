@@ -124,6 +124,7 @@ const Results = () => {
         "analyze-style",
         {
           body: {
+            action: "regenerate",
             imageUrl: analysis.image_url,
             occasion: analysis.occasion,
             gender: analysis.gender,
@@ -133,7 +134,16 @@ const Results = () => {
         }
       );
 
-      if (functionError) throw functionError;
+      if (functionError) {
+        const response = functionError.context;
+        if (response instanceof Response) {
+          const details = await response.json().catch(() => null);
+          if (details?.error) throw new Error(details.error);
+        }
+        throw functionError;
+      }
+
+      if (!functionData?.generated_image_url) throw new Error(functionData?.image_generation_error || "تعذر إنشاء طقم جديد؛ احتفظنا بالصورة السابقة.");
 
       const finalFunctionData = functionData;
 
@@ -194,7 +204,7 @@ const Results = () => {
                 ) : (
                   <RefreshCw className="w-4 h-4 ml-2" />
                 )}
-                إعادة التحليل
+                تجربة طقم آخر
               </Button>
               <Button
                 variant={isFavorite ? "default" : "outline"}

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, Sparkles, Loader2, Camera, ArrowRight, Heart } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -71,6 +72,10 @@ const Analyze = () => {
   const [preview, setPreview] = useState<string>("");
   const [occasion, setOccasion] = useState("");
   const [gender, setGender] = useState("");
+  const [outfitImage, setOutfitImage] = useState<File | null>(null);
+  const [outfitPreview, setOutfitPreview] = useState("");
+  const [outfitRequest, setOutfitRequest] = useState("");
+  const [preparingOutfit, setPreparingOutfit] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [authReady, setAuthReady] = useState(false);
 
@@ -142,6 +147,12 @@ const Analyze = () => {
 
       if (signedUrlError) throw signedUrlError;
       const imageUrl = signedUrlData.signedUrl;
+      let outfitReferencePath: string | null = null;
+      if (outfitImage) {
+        outfitReferencePath = `${user.id}/outfits/${crypto.randomUUID()}.${outfitImage.name.split(".").pop() || "jpg"}`;
+        const { error } = await supabase.storage.from("analysis-images").upload(outfitReferencePath, outfitImage, { contentType: outfitImage.type });
+        if (error) throw error;
+      }
 
       // Create analysis record first to get ID
       const { data: analysisRecord, error: dbError } = await supabase
@@ -151,7 +162,7 @@ const Analyze = () => {
           image_url: imageUrl,
           occasion,
           gender,
-          analysis_result: {},
+          analysis_result: { outfit_preferences: { outfitRequest: outfitRequest.trim(), outfitReferencePath } },
         })
         .select()
         .single();
@@ -168,11 +179,20 @@ const Analyze = () => {
             gender,
             userId: user.id,
             analysisId: analysisRecord.id,
+            outfitRequest: outfitRequest.trim(),
+            outfitReferencePath,
           },
         }
       );
 
-      if (functionError) throw functionError;
+      if (functionError) {
+        const response = functionError.context;
+        if (response instanceof Response) {
+          const details = await response.json().catch(() => null);
+          if (details?.error) throw new Error(details.error);
+        }
+        throw functionError;
+      }
 
       const finalFunctionData = functionData;
 
@@ -291,6 +311,35 @@ const Analyze = () => {
                 />
               </div>
 
+              <div className="space-y-3" dir="rtl">
+                <Label htmlFor="outfit-reference">صورة الملابس المطلوبة (اختياري)</Label>
+                {outfitPreview && <img src={outfitPreview} alt="الملابس المطلوبة" className="h-48 w-full object-contain rounded-lg" />}
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" disabled={loading || preparingOutfit} onClick={() => document.getElementById("outfit-reference")?.click()}>
+                    {preparingOutfit ? <Loader2 className="w-4 h-4 ml-2 animate-spin" /> : <Upload className="w-4 h-4 ml-2" />}
+                    {outfitImage ? "تغيير صورة الملابس" : "اختيار صورة الملابس"}
+                  </Button>
+                  {outfitImage && <Button variant="ghost" disabled={loading} onClick={() => { setOutfitImage(null); setOutfitPreview(""); }}>إزالة</Button>}
+                </div>
+                <input id="outfit-reference" type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file) return;
+                  setPreparingOutfit(true);
+                  try {
+                    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) throw new Error("اختر صورة JPG أو PNG أو WebP");
+                    const prepared = await prepareImageForAnalysis(file);
+                    if (prepared.size > MAX_ANALYSIS_IMAGE_BYTES) throw new Error("صورة الملابس كبيرة جداً");
+                    const reader = new FileReader();
+                    reader.onloadend = () => { setOutfitImage(prepared); setOutfitPreview(String(reader.result || "")); };
+                    reader.readAsDataURL(prepared);
+                  } catch (error) { toast.error(error instanceof Error ? error.message : "تعذر تجهيز صورة الملابس"); }
+                  finally { setPreparingOutfit(false); }
+                }} />
+                <Label htmlFor="outfit-request">الملابس التي تريد ارتداءها (اختياري)</Label>
+                <Textarea id="outfit-request" value={outfitRequest} onChange={(event) => setOutfitRequest(event.target.value)} maxLength={2000} disabled={loading} placeholder="أريد بنطلون جينز أزرق وقميصاً بنيّاً غامقاً" className="min-h-24" />
+              </div>
+
               {/* Gender Selection */}
               <div className="space-y-2">
                 <Label>الجنس</Label>
@@ -328,7 +377,7 @@ const Analyze = () => {
                 size="lg"
                 className="w-full"
                 onClick={handleAnalyze}
-                disabled={loading || !image || !occasion || !gender}
+                disabled={loading || preparingOutfit || !image || !occasion || !gender}
               >
                 {loading ? (
                   <>
