@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
+import { buildOutfitInstructions, outfitSignature, validateOutfitPreferences } from "./outfit-rules.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -260,6 +261,23 @@ serve(async (req) => {
       );
     }
 
+    const ownedAnalysis = await verifyAnalysisOwnership(supabase, analysisId, effectiveUserId);
+    const previousResult = ownedAnalysis.analysis_result || {};
+    const regenerating = action === "regenerate";
+    const preferences = regenerating ? (previousResult.outfit_preferences || {}) : {
+      outfitRequest: requestData.outfitRequest || "",
+      outfitReferencePath: requestData.outfitReferencePath || null,
+    };
+    const preferenceError = validateOutfitPreferences(preferences, effectiveUserId);
+    if (preferenceError) return new Response(JSON.stringify({ error: preferenceError }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+    const previousOutfits = regenerating ? [
+      ...(Array.isArray(previousResult.outfit_history) ? previousResult.outfit_history.slice(-5) : []),
+      { توصيات_الملابس_والأطقم: previousResult.توصيات_الملابس_والأطقم || [] },
+    ] : [];
+    const variation = regenerating ? Math.min(10000, Number(previousResult.outfit_variation || 0) + 1) : 0;
+
     console.log("Starting analysis for:", { occasion, gender, analysisId, userId: effectiveUserId });
 
     // Download image from private bucket using service role client
@@ -311,6 +329,22 @@ serve(async (req) => {
     }
     const base64Image = btoa(binaryString);
     const mimeType = imageData.type || "image/jpeg";
+    let referenceImagePart: { type: string; image_url: { url: string } } | null = null;
+    if (preferences.outfitReferencePath) {
+      const { data: reference, error: referenceError } = await supabase.storage.from("analysis-images").download(preferences.outfitReferencePath);
+      if (referenceError || !reference) return new Response(JSON.stringify({ error: "تعذر تحميل صورة الملابس." }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+      if (!reference.size || reference.size > MAX_INPUT_IMAGE_BYTES || !["image/jpeg", "image/png", "image/webp"].includes(reference.type)) {
+        return new Response(JSON.stringify({ error: "صورة الملابس يجب أن تكون JPG أو PNG أو WebP بحجم أقل من ٧ ميجابايت." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const bytes = new Uint8Array(await reference.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.slice(i, i + 8192));
+      referenceImagePart = { type: "image_url", image_url: { url: `data:${reference.type};base64,${btoa(binary)}` } };
+    }
 
     // Step 1: Get style analysis from Lovable AI
     const occasionLabels: Record<string, string> = {
@@ -357,8 +391,9 @@ serve(async (req) => {
           {
             role: "user",
             content: [
-              { type: "text", text: userPrompt },
+              { type: "text", text: `${userPrompt}\n${buildOutfitInstructions(preferences, previousOutfits, variation)}` },
               { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } },
+              ...(referenceImagePart ? [referenceImagePart] : []),
             ],
           },
         ],
@@ -405,13 +440,16 @@ serve(async (req) => {
       }
     } catch (parseError) {
       console.error("JSON parse error:", parseError);
-      analysisResult = {
-        تحليل_المدخلات: "تم تحليل الصورة بنجاح",
-        توصيات_تسريحات_الشعر: [{ التسريحة: "تسريحة عصرية أنيقة", الملاءمة: "تناسب شكل الوجه والمناسبة" }],
-        توصيات_الملابس_والأطقم: [{ القطعة: "طقم أنيق", اللون: "ألوان محايدة", الخامة: "قماش عالي الجودة", السبب: "مناسب للمناسبة" }],
-        الأسلوب_والتنسيق_المقترح: "تنسيق عصري ومريح",
-        ملاحظات_أخلاقية_وعملية: "احرص على اختيار ملابس مريحة",
-      };
+      return new Response(JSON.stringify({ error: "تعذر الحصول على وصف ملابس صالح؛ لم يتم تغيير النتيجة السابقة." }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!Array.isArray(analysisResult?.توصيات_الملابس_والأطقم) || !analysisResult.توصيات_الملابس_والأطقم.length ||
+      (regenerating && previousOutfits.some(outfit => outfitSignature(outfit) === outfitSignature(analysisResult)))) {
+      return new Response(JSON.stringify({ error: "لم يقترح النموذج طقماً جديداً؛ احتفظنا بالنتيجة السابقة." }), {
+        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Step 2: Edit the original photo through the credited Google Cloud project.
@@ -444,7 +482,7 @@ serve(async (req) => {
       }
     }
 
-    console.log("Image generation prompt:", stylePrompt);
+    // Do not log personal outfit preferences or reference details.
 
     let imageGenerationError: string | null = null;
     try {
@@ -491,6 +529,9 @@ serve(async (req) => {
 
     const result = {
       ...analysisResult,
+      outfit_preferences: preferences,
+      outfit_history: previousOutfits,
+      outfit_variation: variation,
       generated_image_url: generatedImageUrl,
       image_generation_error: imageGenerationError,
       image_generation_provider: "google-cloud",
