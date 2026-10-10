@@ -14,6 +14,10 @@ gcloud iam service-accounts describe "$builder" --project="$project" >/dev/null 
 gcloud iam roles describe styleImagePredictor --project="$project" >/dev/null 2>&1 || gcloud iam roles create styleImagePredictor --title='Special Style image prediction' --permissions=aiplatform.endpoints.predict,serviceusage.services.use --stage=GA --project="$project"
 gcloud projects add-iam-policy-binding "$project" --member="serviceAccount:$runtime" --role="projects/$project/roles/styleImagePredictor" --condition=None --quiet >/dev/null
 gcloud projects add-iam-policy-binding "$project" --member="serviceAccount:$builder" --role=roles/run.builder --condition=None --quiet >/dev/null
+source_bucket="gs://run-sources-${project}-us-central1"
+if gcloud storage buckets describe "$source_bucket" >/dev/null 2>&1; then
+  gcloud storage buckets add-iam-policy-binding "$source_bucket" --member="serviceAccount:$builder" --role=roles/storage.objectViewer --quiet >/dev/null
+fi
 
 # These are the existing public app configuration values, never Google credentials.
 python3 - <<'PY'

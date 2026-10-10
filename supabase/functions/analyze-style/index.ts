@@ -10,8 +10,10 @@ const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const GOOGLE_CLOUD_IMAGE_EDIT_URL = Deno.env.get("GOOGLE_CLOUD_IMAGE_EDIT_URL") ||
+  "https://special-style-image-editor-1030501980458.us-central1.run.app/edit";
 
-const MAX_INPUT_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_INPUT_IMAGE_BYTES = 7 * 1024 * 1024;
 
 // Allowed values for validation
 const ALLOWED_OCCASIONS = ["casual", "work", "formal", "party", "wedding", "sport"];
@@ -310,9 +312,6 @@ serve(async (req) => {
     const base64Image = btoa(binaryString);
     const mimeType = imageData.type || "image/jpeg";
 
-    // Build a base64 data URI for the image model input
-    const inputImageDataUri = `data:${mimeType};base64,${base64Image}`;
-
     // Step 1: Get style analysis from Lovable AI
     const occasionLabels: Record<string, string> = {
       casual: "يومي",
@@ -415,21 +414,20 @@ serve(async (req) => {
       };
     }
 
-    // Step 2: Generate image using Lovable AI image editing model
+    // Step 2: Edit the original photo through the credited Google Cloud project.
     let generatedImageUrl: string | null = null;
 
-    console.log("Generating face-preserving image with Lovable AI...");
+    console.log("Generating face-preserving image with Google Cloud...");
 
     // Build dynamic prompt based on gender and analysis
     const outfitDetails = analysisResult.توصيات_الملابس_والأطقم || [];
     const modelOutfitPrompt = normalizePromptValue(analysisResult.image_generation_prompt || "");
-    const makeupDetails = analysisResult.اقتراحات_المكياج || "";
     const hijabDetails = analysisResult.تنسيق_الحجاب || "";
     const outfitDescriptions = modelOutfitPrompt || buildOutfitPrompt(outfitDetails);
 
     let stylePrompt = "";
 
-    // FLUX Kontext is an image-EDITING model. Keep the edit intentionally narrow:
+    // Keep the image edit intentionally narrow:
     // changing studio/background/hair/expression often causes face drift and outfit hallucination.
     const identityLock = "Identity lock: preserve the exact same face, facial features, expression, eyes, nose, mouth, skin tone, head shape, hair, body shape, pose, camera angle, framing, lighting, and background from the input image. Do not beautify, age, slim, reshape, redraw, or reinterpret the face. Keep the original facial expression unchanged.";
     const outfitLock = `Edit only the clothing area. Replace the current outfit with exactly these visible garments and colors, no substitutions, no missing layers, no extra colors: ${outfitDescriptions}. Every listed garment must be visible in the final image. If a shirt, tie, jacket, dress, hijab, trousers, or shoes are listed, they must appear clearly and in the stated color.`;
@@ -440,9 +438,9 @@ serve(async (req) => {
     } else {
       const hasHijab = hijabDetails && hijabDetails.length > 0;
       if (hasHijab) {
-        stylePrompt = `${identityLock} ${outfitLock} Hijab edit only if needed: ${normalizePromptValue(hijabDetails)}. Keep makeup subtle and do not change facial structure${makeupDetails ? `; makeup target: ${normalizePromptValue(makeupDetails)}` : ""}. ${negativeLock}`;
+        stylePrompt = `${identityLock} ${outfitLock} Hijab edit only if needed: ${normalizePromptValue(hijabDetails)}. Preserve the original makeup and face unchanged. ${negativeLock}`;
       } else {
-        stylePrompt = `${identityLock} ${outfitLock} Keep the existing hair shape as close as possible; do not change face or expression${makeupDetails ? `; makeup target: ${normalizePromptValue(makeupDetails)}` : ""}. ${negativeLock}`;
+        stylePrompt = `${identityLock} ${outfitLock} Preserve the original hair, makeup, face and expression unchanged. ${negativeLock}`;
       }
     }
 
@@ -450,47 +448,37 @@ serve(async (req) => {
 
     let imageGenerationError: string | null = null;
     try {
-      console.log("Calling Lovable AI image model for face-preserving edit...");
-      const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      await verifyAnalysisOwnership(supabase, analysisId, effectiveUserId);
+      console.log("Calling Google Cloud image editor...");
+      const imageResponse = await fetch(GOOGLE_CLOUD_IMAGE_EDIT_URL, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: authHeader,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3.1-flash-image",
-          modalities: ["image", "text"],
-          messages: [
-            {
-              role: "user",
-              content: [
-                { type: "text", text: stylePrompt },
-                { type: "image_url", image_url: { url: inputImageDataUri } },
-              ],
-            },
-          ],
+          analysisId,
+          storagePath,
+          prompt: stylePrompt,
         }),
+        signal: AbortSignal.timeout(190000),
       });
 
       if (!imageResponse.ok) {
-        const errorText = await imageResponse.text();
-        console.error("Lovable AI image error:", imageResponse.status, errorText);
+        console.error("Google Cloud image error:", imageResponse.status);
         if (imageResponse.status === 429) {
           imageGenerationError = "تم تجاوز حد الطلبات لتوليد الصور. يرجى المحاولة بعد قليل.";
-        } else if (imageResponse.status === 402) {
-          imageGenerationError = "رصيد الذكاء الاصطناعي غير كافٍ لتوليد الصور. يرجى إضافة رصيد.";
+        } else if (imageResponse.status === 413) {
+          imageGenerationError = "الصورة كبيرة جداً لتعديل الملابس. يرجى اختيار صورة أصغر.";
         } else {
-          imageGenerationError = `Image generation failed (${imageResponse.status})`;
+          imageGenerationError = "تعذّر تعديل الصورة عبر Google Cloud. يرجى إعادة المحاولة.";
         }
       } else {
         const imageData = await imageResponse.json();
-        const generatedDataUri =
-          imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url ||
-          imageData?.choices?.[0]?.message?.image_url?.url ||
-          null;
+        const generatedDataUri = imageData?.dataUri || null;
 
         if (!generatedDataUri) {
-          console.error("No image returned from Lovable AI");
+          console.error("No image returned from Google Cloud");
           imageGenerationError = "لم يتم إنشاء الصورة. يرجى المحاولة مرة أخرى.";
         } else {
           generatedImageUrl = await saveGeneratedDataUri(supabase, effectiveUserId, generatedDataUri);
@@ -498,13 +486,16 @@ serve(async (req) => {
       }
     } catch (imageError: any) {
       console.error("Image generation error:", imageError);
-      imageGenerationError = imageError?.message || "Unknown image generation error";
+      imageGenerationError = "تعذّر تعديل الصورة عبر Google Cloud. يرجى إعادة المحاولة.";
     }
 
     const result = {
       ...analysisResult,
       generated_image_url: generatedImageUrl,
       image_generation_error: imageGenerationError,
+      image_generation_provider: "google-cloud",
+      image_generation_model: "gemini-nano-banana-2.1",
+      image_generation_project: "project-25b363b8-50d5-4c00-ac5",
     };
 
 
