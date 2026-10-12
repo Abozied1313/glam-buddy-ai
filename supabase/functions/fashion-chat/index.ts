@@ -2,7 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const DAILY_CHAT_LIMIT = 15;
-const MODEL = "google/gemini-3.5-flash";
+const MODEL = "google/gemini-3.8-flash";
 const SYSTEM = `You are "The Special Style" fashion consultant. Reply in the user's language (usually Arabic), concise and friendly, using markdown.
 Give text-only advice on outfits, color matching, fabrics, fit, occasions and hairstyles for men and women. Suggest varied, personalized colors (never default to black or dark olive).
 You cannot create, render or edit images. Never claim to generate an image. If the user wants to see a look, tell them to press the "Generate My Look" (ولّد إطلالتي) button on the analysis page.`;
