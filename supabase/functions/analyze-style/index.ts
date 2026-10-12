@@ -83,6 +83,8 @@ function isValidImageUrl(url: string): boolean {
   }
 }
 
+const DAILY_RENDER_LIMIT = 3;
+
 function validateInput(data: any): { valid: boolean; error?: string } {
   // Check required fields exist
   if (!data.imageUrl || typeof data.imageUrl !== "string") {
@@ -529,6 +531,8 @@ serve(async (req) => {
           imageGenerationError = "لم يتم إنشاء الصورة. يرجى المحاولة مرة أخرى.";
         } else {
           generatedImageUrl = await saveGeneratedDataUri(supabase, effectiveUserId, generatedDataUri);
+          const { error: usageError } = await supabase.from("usage_events").insert({ user_id: effectiveUserId, kind: "render" });
+          if (usageError) console.error("Usage record failed:", usageError.message);
         }
       }
     } catch (imageError: any) {
