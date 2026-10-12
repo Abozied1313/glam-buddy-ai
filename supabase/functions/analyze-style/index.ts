@@ -83,6 +83,8 @@ function isValidImageUrl(url: string): boolean {
   }
 }
 
+const DAILY_RENDER_LIMIT = 3;
+
 function validateInput(data: any): { valid: boolean; error?: string } {
   // Check required fields exist
   if (!data.imageUrl || typeof data.imageUrl !== "string") {
@@ -103,9 +105,9 @@ function validateInput(data: any): { valid: boolean; error?: string } {
     return { valid: false, error: "Invalid imageUrl: must be from allowed storage domain" };
   }
 
-  // Validate occasion
-  if (!ALLOWED_OCCASIONS.includes(data.occasion)) {
-    return { valid: false, error: `Invalid occasion: must be one of ${ALLOWED_OCCASIONS.join(", ")}` };
+  // Validate free-text occasion
+  if (data.occasion.length > 300 || /[\u0000-\u001f]/.test(data.occasion)) {
+    return { valid: false, error: "Invalid occasion: max 300 characters" };
   }
 
   // Validate gender
@@ -354,6 +356,7 @@ serve(async (req) => {
       party: "حفلة",
       wedding: "زفاف",
       sport: "رياضي",
+      general: "إطلالة عامة مناسبة لشخصيته ويومه",
     };
 
     const genderLabel = gender === "male" ? "رجل" : "امرأة";
@@ -485,6 +488,14 @@ serve(async (req) => {
     // Do not log personal outfit preferences or reference details.
 
     let imageGenerationError: string | null = null;
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count: rendersUsed } = await supabase.from("usage_events").select("id", { count: "exact", head: true })
+      .eq("user_id", effectiveUserId).eq("kind", "render").gte("created_at", since);
+    if ((rendersUsed ?? 0) >= DAILY_RENDER_LIMIT) {
+      return new Response(JSON.stringify({ error: "استهلكت 3 صور اليوم. يتجدد رصيدك تلقائياً بعد 24 ساعة من أول صورة." }), {
+        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     try {
       await verifyAnalysisOwnership(supabase, analysisId, effectiveUserId);
       console.log("Calling Google Cloud image editor...");
@@ -520,6 +531,8 @@ serve(async (req) => {
           imageGenerationError = "لم يتم إنشاء الصورة. يرجى المحاولة مرة أخرى.";
         } else {
           generatedImageUrl = await saveGeneratedDataUri(supabase, effectiveUserId, generatedDataUri);
+          const { error: usageError } = await supabase.from("usage_events").insert({ user_id: effectiveUserId, kind: "render" });
+          if (usageError) console.error("Usage record failed:", usageError.message);
         }
       }
     } catch (imageError: any) {
