@@ -62,6 +62,7 @@ const Favorites = () => {
   const getOccasionLabel = (occasion: string) => {
     const labels: Record<string, string> = {
       casual: "يومي",
+      general: "عام",
       work: "عمل",
       formal: "رسمي",
       party: "حفلة",

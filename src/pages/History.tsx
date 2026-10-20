@@ -135,12 +135,7 @@ const History = () => {
                           {analysis.gender === "male" ? "ذكر" : "أنثى"}
                         </span>
                         <span className="px-3 py-1 bg-muted rounded-full text-sm font-medium">
-                          {analysis.occasion === "casual" && "يومي"}
-                          {analysis.occasion === "work" && "عمل"}
-                          {analysis.occasion === "formal" && "رسمي"}
-                          {analysis.occasion === "party" && "حفلة"}
-                          {analysis.occasion === "wedding" && "زفاف"}
-                          {analysis.occasion === "sport" && "رياضي"}
+                          {({ casual: "يومي", work: "عمل", formal: "رسمي", party: "حفلة", wedding: "زفاف", sport: "رياضي", general: "عام" } as Record<string, string>)[analysis.occasion] || analysis.occasion}
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground">
