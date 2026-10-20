@@ -6,6 +6,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Heart, ArrowRight, Loader2, RefreshCw, ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
+import FashionChat from "@/components/FashionChat";
+import { useQuota, notifyQuotaChanged } from "@/hooks/useQuota";
 import { useRefreshSignedUrls } from "@/hooks/useRefreshSignedUrls";
 interface AnalysisResult {
   تحليل_المدخلات: string;
@@ -115,6 +117,8 @@ const Results = () => {
     }
   };
 
+  const { quota } = useQuota();
+
   const handleRegenerate = async () => {
     if (!analysis) return;
     
@@ -145,6 +149,7 @@ const Results = () => {
 
       if (!functionData?.generated_image_url) throw new Error(functionData?.image_generation_error || "تعذر إنشاء طقم جديد؛ احتفظنا بالصورة السابقة.");
 
+      notifyQuotaChanged();
       const finalFunctionData = functionData;
 
       // Update analysis with new results
@@ -197,14 +202,14 @@ const Results = () => {
               <Button
                 variant="outline"
                 onClick={handleRegenerate}
-                disabled={regenerating}
+                disabled={regenerating || quota?.rendersLeft === 0}
               >
                 {regenerating ? (
                   <Loader2 className="w-4 h-4 ml-2 animate-spin" />
                 ) : (
                   <RefreshCw className="w-4 h-4 ml-2" />
                 )}
-                تجربة طقم آخر
+                تجربة طقم آخر{quota ? ` (${quota.rendersLeft}/${quota.rendersLimit})` : ""}
               </Button>
               <Button
                 variant={isFavorite ? "default" : "outline"}

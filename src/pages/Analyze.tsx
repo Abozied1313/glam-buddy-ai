@@ -9,6 +9,8 @@ import { Upload, Sparkles, Loader2, Camera, ArrowRight, Heart } from "lucide-rea
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
+import FashionChat from "@/components/FashionChat";
+import { useQuota, notifyQuotaChanged } from "@/hooks/useQuota";
 
 const MAX_ANALYSIS_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_ANALYSIS_IMAGE_DIMENSION = 1600;
@@ -71,6 +73,7 @@ const Analyze = () => {
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState<string>("");
   const [occasion, setOccasion] = useState("");
+  const { quota } = useQuota();
   const [gender, setGender] = useState("");
   const [outfitImage, setOutfitImage] = useState<File | null>(null);
   const [outfitPreview, setOutfitPreview] = useState("");
@@ -122,7 +125,7 @@ const Analyze = () => {
   };
 
   const handleAnalyze = async () => {
-    if (!image || !occasion || !gender) {
+    if (!image || !gender) {
       toast.error("يرجى ملء جميع الحقول");
       return;
     }
@@ -160,7 +163,7 @@ const Analyze = () => {
         .insert({
           user_id: user.id,
           image_url: imageUrl,
-          occasion,
+          occasion: occasion.trim() || "general",
           gender,
           analysis_result: { outfit_preferences: { outfitRequest: outfitRequest.trim(), outfitReferencePath } },
         })
@@ -175,7 +178,7 @@ const Analyze = () => {
         {
           body: {
             imageUrl: imageUrl,
-            occasion,
+            occasion: occasion.trim() || "general",
             gender,
             userId: user.id,
             analysisId: analysisRecord.id,
@@ -194,6 +197,7 @@ const Analyze = () => {
         throw functionError;
       }
 
+      notifyQuotaChanged();
       const finalFunctionData = functionData;
 
       // Update analysis with results and generated image
@@ -354,30 +358,25 @@ const Analyze = () => {
                 </Select>
               </div>
 
-              {/* Occasion Selection */}
+              {/* Free-text occasion */}
               <div className="space-y-2">
-                <Label>المناسبة</Label>
-                <Select value={occasion} onValueChange={setOccasion} dir="rtl">
-                  <SelectTrigger>
-                    <SelectValue placeholder="اختر المناسبة" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="casual">يومي</SelectItem>
-                    <SelectItem value="work">عمل</SelectItem>
-                    <SelectItem value="formal">رسمي</SelectItem>
-                    <SelectItem value="party">حفلة</SelectItem>
-                    <SelectItem value="wedding">زفاف</SelectItem>
-                    <SelectItem value="sport">رياضي</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="occasion">إلى أين أنت ذاهب اليوم؟ (اختياري)</Label>
+                <Textarea id="occasion" value={occasion} onChange={(e) => setOccasion(e.target.value)} maxLength={300} disabled={loading}
+                  placeholder="أخبرنا عن خططك: مقابلة عمل، تمشية، موعد رومانسي، جيم، سفر..." className="min-h-20" />
               </div>
+
+              {quota && (
+                <p className={`text-sm text-center ${quota.rendersLeft ? "text-muted-foreground" : "text-destructive"}`}>
+                  {quota.rendersLeft ? `${quota.rendersLeft}/${quota.rendersLimit} صور متبقية اليوم` : "انتهت صورك لليوم (3 صور). يتجدد الرصيد تلقائياً خلال 24 ساعة."}
+                </p>
+              )}
 
               <Button
                 variant="hero"
                 size="lg"
                 className="w-full"
                 onClick={handleAnalyze}
-                disabled={loading || preparingOutfit || !image || !occasion || !gender}
+                disabled={loading || preparingOutfit || !image || !gender || quota?.rendersLeft === 0}
               >
                 {loading ? (
                   <>
@@ -387,12 +386,13 @@ const Analyze = () => {
                 ) : (
                   <>
                     <Sparkles className="w-5 h-5 ml-2" />
-                    تحليل الآن
+                    ولّد إطلالتي
                   </>
                 )}
               </Button>
             </div>
           </Card>
+          {user && <FashionChat />}
         </div>
       </div>
     </div>
