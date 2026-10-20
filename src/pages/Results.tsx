@@ -340,6 +340,7 @@ const Results = () => {
               {result?.ملاحظات_أخلاقية_وعملية}
             </p>
           </Card>
+          <FashionChat />
         </div>
       </div>
     </div>
