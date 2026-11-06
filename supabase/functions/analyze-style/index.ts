@@ -7,7 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+const GEMINI_ANALYSIS_MODEL = "gemini-2.5-flash";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -331,7 +332,7 @@ serve(async (req) => {
     }
     const base64Image = btoa(binaryString);
     const mimeType = imageData.type || "image/jpeg";
-    let referenceImagePart: { type: string; image_url: { url: string } } | null = null;
+    let referenceImagePart: { inline_data: { mime_type: string; data: string } } | null = null;
     if (preferences.outfitReferencePath) {
       const { data: reference, error: referenceError } = await supabase.storage.from("analysis-images").download(preferences.outfitReferencePath);
       if (referenceError || !reference) return new Response(JSON.stringify({ error: "تعذر تحميل صورة الملابس." }), {
@@ -345,7 +346,7 @@ serve(async (req) => {
       const bytes = new Uint8Array(await reference.arrayBuffer());
       let binary = "";
       for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.slice(i, i + 8192));
-      referenceImagePart = { type: "image_url", image_url: { url: `data:${reference.type};base64,${btoa(binary)}` } };
+      referenceImagePart = { inline_data: { mime_type: reference.type, data: btoa(binary) } };
     }
 
     // Step 1: Get style analysis from Lovable AI
@@ -371,46 +372,44 @@ serve(async (req) => {
 
 أعد النتيجة بتنسيق JSON فقط.`;
 
-    if (!LOVABLE_API_KEY) {
-      console.error("LOVABLE_API_KEY is not configured");
+    if (!GEMINI_API_KEY) {
+      console.error("GEMINI_API_KEY is not configured");
       return new Response(
         JSON.stringify({ error: "خدمة تحليل الصور غير مهيأة حالياً." }),
         { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log("Calling Lovable AI for style analysis...");
+    console.log("Calling Gemini API for style analysis...");
 
-    const analysisResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3.5-flash",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
+    const analysisResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_ANALYSIS_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: [{
             role: "user",
-            content: [
-              { type: "text", text: `${userPrompt}\n${buildOutfitInstructions(preferences, previousOutfits, variation)}` },
-              { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } },
+            parts: [
+              { text: `${userPrompt}\n${buildOutfitInstructions(preferences, previousOutfits, variation)}` },
+              { inline_data: { mime_type: mimeType, data: base64Image } },
               ...(referenceImagePart ? [referenceImagePart] : []),
             ],
-          },
-        ],
-      }),
-    });
+          }],
+          generationConfig: { responseMimeType: "application/json" },
+        }),
+      },
+    );
 
     if (!analysisResponse.ok) {
       const errorText = await analysisResponse.text();
-      console.error("Lovable AI error:", errorText);
+      console.error("Gemini API error:", analysisResponse.status, errorText.slice(0, 500));
 
       if (analysisResponse.status === 402) {
         return new Response(
           JSON.stringify({
-            error: "لا يوجد رصيد كافٍ في مساحة عمل Lovable AI. يرجى إضافة رصيد ثم إعادة المحاولة.",
+            error: "تعذر استخدام مفتاح Gemini (رصيد أو صلاحية). يرجى المراجعة ثم إعادة المحاولة.",
           }),
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -428,7 +427,7 @@ serve(async (req) => {
 
 
     const analysisData = await analysisResponse.json();
-    const analysisText = analysisData.choices?.[0]?.message?.content || "";
+    const analysisText = (analysisData.candidates?.[0]?.content?.parts || []).map((p: { text?: string }) => p.text || "").join("");
     console.log("Raw analysis response received");
 
     // Parse the JSON response
