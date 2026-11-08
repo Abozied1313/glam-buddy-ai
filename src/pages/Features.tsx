@@ -65,7 +65,7 @@ const Features = () => {
               لماذا <span className="gradient-text">The Special Style</span>؟
             </h2>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              نستخدم أحدث تقنيات الذكاء الاصطناعي لتقديم توصيات موضة مخصصة لك
+              نستخدم الذكاء الاصطناعي لتقديم توصيات موضة مخصصة لك
             </p>
           </div>
 
@@ -131,7 +131,7 @@ const Features = () => {
             جاهز لاكتشاف أسلوبك المثالي؟
           </h2>
           <p className="text-xl mb-8 opacity-90 max-w-2xl mx-auto">
-            انضم لآلاف المستخدمين الذين حسّنوا أسلوبهم الشخصي معنا
+            ارفع صورتك واختر تفضيلاتك لاستكشاف تنسيق الملابس
           </p>
           <Button
             variant="secondary"

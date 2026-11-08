@@ -6,18 +6,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Send, Shirt, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuota, notifyQuotaChanged } from "@/hooks/useQuota";
+import { availabilityText } from "@/lib/quota-display";
 import { toast } from "sonner";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
 const FashionChat = () => {
+  const lock=useRef(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const { quota } = useQuota();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const exhausted = quota ? quota.chatLeft <= 0 : false;
+  const exhausted = !quota || quota.chatLeft <= 0;
 
   useEffect(() => {
     supabase.from("chat_messages").select("role, content").order("created_at").limit(100).then(({ data, error }) => {
@@ -29,7 +31,8 @@ const FashionChat = () => {
 
   const send = async () => {
     const text = input.trim();
-    if (!text || busy || exhausted) return;
+    if (!text || lock.current || busy || exhausted) return;
+    lock.current=true;
     setInput("");
     setBusy(true);
     setMessages((m) => [...m, { role: "user", content: text }, { role: "assistant", content: "" }]);
@@ -38,12 +41,14 @@ const FashionChat = () => {
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fashion-chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, requestId: crypto.randomUUID() }),
       });
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => null);
         throw new Error(err?.error || "تعذر الرد الآن");
       }
+      const contentType=res.headers.get("content-type") || "";
+      if(contentType.includes("application/json")){const replay=await res.json();setMessages(m=>[...m.slice(0,-1),{role:"assistant",content:replay.content}]);return;}
       notifyQuotaChanged();
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -57,15 +62,18 @@ const FashionChat = () => {
         for (const line of lines) {
           if (!line.startsWith("data: ") || line.includes("[DONE]")) continue;
           try {
-            acc += JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || "";
+            const event=JSON.parse(line.slice(6));
+            if(event.error){setMessages(m=>[...m.slice(0,-1),{role:"assistant",content:acc+"\n\n[توقف الرد قبل اكتماله]"}]);toast.error(event.error);return;}
+            acc += event.choices?.[0]?.delta?.content || "";
             setMessages((m) => [...m.slice(0, -1), { role: "assistant", content: acc }]);
           } catch { /* partial line */ }
         }
       }
     } catch (e) {
-      setMessages((m) => m.slice(0, -1));
+      setMessages(m=>m[m.length-1]?.content ? [...m.slice(0,-1),{role:"assistant",content:m[m.length-1].content+"\n\n[توقف الرد قبل اكتماله]"}] : m.slice(0,-1));
       toast.error(e instanceof Error ? e.message : "تعذر الرد الآن");
     } finally {
+      lock.current=false;
       setBusy(false);
       notifyQuotaChanged();
       inputRef.current?.focus();
@@ -100,7 +108,7 @@ const FashionChat = () => {
         ))}
         <div ref={endRef} />
       </div>
-      {exhausted && <p className="text-sm text-destructive mb-2">انتهت رسائلك لليوم (15 رسالة). يتجدد الرصيد تلقائياً خلال 24 ساعة.</p>}
+      {exhausted && <p className="text-sm text-destructive mb-2">{quota ? availabilityText(quota.chatAvailableAt) : "تعذر التحقق من الحصة أو جارٍ تحميلها."}</p>}
       <div className="flex gap-2 items-end">
         <Textarea ref={inputRef} autoFocus value={input} onChange={(e) => setInput(e.target.value)} maxLength={2000} disabled={exhausted}
           placeholder="اكتب سؤالك عن الموضة..." className="min-h-12 resize-none"

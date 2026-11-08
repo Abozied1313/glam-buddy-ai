@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Heart, ArrowRight, Loader2, RefreshCw, ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
 import FashionChat from "@/components/FashionChat";
+import { availabilityText } from "@/lib/quota-display";
 import { useQuota, notifyQuotaChanged } from "@/hooks/useQuota";
 import { useRefreshSignedUrls } from "@/hooks/useRefreshSignedUrls";
 interface AnalysisResult {
@@ -26,6 +27,7 @@ interface AnalysisResult {
 }
 
 const Results = () => {
+  const lock=useRef(false);
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -120,7 +122,8 @@ const Results = () => {
   const { quota } = useQuota();
 
   const handleRegenerate = async () => {
-    if (!analysis) return;
+    if (!analysis || lock.current || !quota || !quota.rendersLeft) return;
+    lock.current=true;
     
     setRegenerating(true);
     try {
@@ -128,6 +131,7 @@ const Results = () => {
         "analyze-style",
         {
           body: {
+            requestId: crypto.randomUUID(),
             action: "regenerate",
             imageUrl: analysis.image_url,
             occasion: analysis.occasion,
@@ -152,17 +156,6 @@ const Results = () => {
       notifyQuotaChanged();
       const finalFunctionData = functionData;
 
-      // Update analysis with new results
-      const { error: updateError } = await supabase
-        .from("style_analyses")
-        .update({ 
-          analysis_result: finalFunctionData,
-          generated_image_url: finalFunctionData.generated_image_url,
-        })
-        .eq("id", id);
-
-      if (updateError) throw updateError;
-
       // Reload analysis
       await loadAnalysis();
       toast.success("تم إعادة التحليل بنجاح!");
@@ -170,6 +163,8 @@ const Results = () => {
       console.error("Regenerate error:", error);
       toast.error(error.message || "حدث خطأ في إعادة التحليل");
     } finally {
+      lock.current=false;
+      notifyQuotaChanged();
       setRegenerating(false);
     }
   };
@@ -202,7 +197,7 @@ const Results = () => {
               <Button
                 variant="outline"
                 onClick={handleRegenerate}
-                disabled={regenerating || quota?.rendersLeft === 0}
+                disabled={regenerating || !quota || quota.rendersLeft === 0}
               >
                 {regenerating ? (
                   <Loader2 className="w-4 h-4 ml-2 animate-spin" />
@@ -221,6 +216,8 @@ const Results = () => {
             </div>
           </div>
 
+          {!quota && <p className="text-destructive mb-4">تعذر التحقق من الحصة أو جارٍ تحميلها.</p>}
+          {quota?.rendersLeft===0 && <p className="text-destructive mb-4">{availabilityText(quota.rendersAvailableAt)}</p>}
           {/* Images */}
           <div className="grid md:grid-cols-2 gap-6 mb-8">
             <Card className="p-6 shadow-elegant">

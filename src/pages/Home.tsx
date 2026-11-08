@@ -18,12 +18,12 @@ const Home = () => {
     {
       icon: Zap,
       title: "توليد صور احترافية",
-      description: "تصور نفسك بالملابس المقترحة قبل الشراء باستخدام تقنية FLUX Pro",
+      description: "تصور نفسك بالملابس المقترحة قبل الشراء بتعديل صورة الملابس",
     },
     {
       icon: Shield,
       title: "خصوصية محمية",
-      description: "جميع بيانات تحليلاتك محفوظة بأمان وتشفير عالي المستوى",
+      description: "صورك في مساحة خاصة، ويمكنك طلب حذف بياناتك من حسابك",
     },
     {
       icon: TrendingUp,
@@ -33,9 +33,9 @@ const Home = () => {
   ];
 
   const stats = [
-    { number: "10K+", label: "مستخدم سعيد" },
-    { number: "50K+", label: "تحليل تم" },
-    { number: "98%", label: "رضا العملاء" },
+    { number: "إطلالتك", label: "وصف الملابس أو صورتها المرجعية" },
+    { number: "ألوانك", label: "اقتراحات متنوعة بحسب طلبك" },
+    { number: "اختياراتك", label: "احفظ إطلالاتك المفضلة" },
   ];
 
   return (
@@ -99,7 +99,7 @@ const Home = () => {
             <div className="grid grid-cols-3 gap-4 pt-12 max-w-md mx-auto">
               {stats.map((stat, i) => (
                 <div key={i} className="text-center">
-                  <p className="text-2xl md:text-3xl font-bold text-primary">{stat.number}</p>
+                  <p className="text-lg md:text-xl font-bold text-primary">{stat.number}</p>
                   <p className="text-xs md:text-sm text-muted-foreground mt-1">{stat.label}</p>
                 </div>
               ))}
@@ -154,7 +154,7 @@ const Home = () => {
             هل أنت مستعد لاكتشاف أسلوبك الحقيقي؟
           </h2>
           <p className="text-lg text-muted-foreground mb-8">
-            انضم إلى آلاف المستخدمين الذين اكتشفوا أسلوبهم المثالي معنا
+            اختر الملابس التي تحبها واستكشف تنسيقات أخرى
           </p>
           <Button
             variant="hero"

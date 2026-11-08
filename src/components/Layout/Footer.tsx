@@ -20,6 +20,7 @@ const Footer = () => {
           <div className="space-y-4">
             <h4 className="text-lg font-semibold text-foreground">روابط سريعة</h4>
             <nav className="flex flex-col space-y-2">
+              <Link to="/privacy" className="text-muted-foreground text-sm">سياسة الخصوصية</Link>
               <Link to="/" className="text-muted-foreground hover:text-primary transition-colors text-sm">
                 الرئيسية
               </Link>
@@ -40,17 +41,17 @@ const Footer = () => {
             <h4 className="text-lg font-semibold text-foreground">تواصل معنا</h4>
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
               <Mail className="w-4 h-4" />
-              <span>support@specialstyle.com</span>
+              <Link to="/settings">إعدادات الحساب والبيانات</Link>
             </div>
             <div className="flex items-center gap-4 pt-2">
               <a
-                href="#"
+                href="/privacy"
                 className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors"
               >
                 <Instagram className="w-5 h-5 text-primary" />
               </a>
               <a
-                href="#"
+                href="/privacy"
                 className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors"
               >
                 <Twitter className="w-5 h-5 text-primary" />

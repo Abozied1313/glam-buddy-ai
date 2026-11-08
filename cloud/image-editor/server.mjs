@@ -20,7 +20,7 @@ export function createImageServer(config, fetcher = fetch) {
 
   return http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") {
-      return send(res, 200, { status: "ok", provider: "google-cloud", model: config.model, project: config.project });
+      return send(res, 200, { status: "ok" });
     }
     if (req.method !== "POST" || req.url !== "/edit") return send(res, 404, { error: "Not found" });
     let userId;
@@ -59,6 +59,12 @@ export function createImageServer(config, fetcher = fetch) {
       activeUsers.add(userId);
       acquired = true;
 
+      const claim = await fetcher(`${config.supabaseUrl}/rest/v1/rpc/claim_image_render`, {
+        method: "POST", headers: { apikey: config.supabaseAnonKey, Authorization: authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({ p_analysis: analysisId }), signal: AbortSignal.timeout(15000),
+      });
+      if (!claim.ok || await claim.json() !== true) return send(res, 403, { error: "Render reservation required" });
+
       const imageResponse = await supabase(`/storage/v1/object/authenticated/analysis-images/${storagePath.split("/").map(encodeURIComponent).join("/")}`, authorization);
       if (!imageResponse.ok) return send(res, 403, { error: "Image access denied" });
       const mimeType = imageResponse.headers.get("content-type")?.split(";")[0];
@@ -95,17 +101,17 @@ export function createImageServer(config, fetcher = fetch) {
           ] }],
           generationConfig: { responseModalities: ["TEXT", "IMAGE"], candidateCount: 1 },
         }),
-        signal: AbortSignal.timeout(180000),
+        signal: AbortSignal.timeout(120000),
       });
       if (!generation.ok) {
-        console.error(JSON.stringify({ event: "cloud_image_error", status: generation.status, model: config.model, project: config.project }));
+        console.error(JSON.stringify({ event: "cloud_image_error", status: generation.status }));
         return send(res, generation.status === 429 ? 429 : 502, { error: "Google Cloud image generation failed" });
       }
       const result = await generation.json();
       const image = result.candidates?.[0]?.content?.parts?.find(part => part.inlineData?.mimeType?.startsWith("image/"))?.inlineData;
       if (!image?.data) return send(res, 502, { error: "Google Cloud returned no image" });
-      console.log(JSON.stringify({ event: "cloud_image_generated", model: config.model, project: config.project }));
-      return send(res, 200, { dataUri: `data:${image.mimeType};base64,${image.data}`, provider: "google-cloud", model: config.model, project: config.project });
+      console.log(JSON.stringify({ event: "cloud_image_generated" }));
+      return send(res, 200, { dataUri: `data:${image.mimeType};base64,${image.data}`, provider: "google-cloud" });
     } catch (error) {
       console.error(JSON.stringify({ event: "image_editor_error", kind: error.name }));
       return send(res, 502, { error: "Image editing is temporarily unavailable" });

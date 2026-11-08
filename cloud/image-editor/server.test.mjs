@@ -37,6 +37,7 @@ test("edits the stored original through the credited Cloud API using service ide
   const result = await run(t, async (url, options) => {
     calls.push(url);
     if (url.includes("/auth/")) return Response.json({ id: user });
+    if (url.includes("/rpc/")) return Response.json(true);
     if (url.includes("/rest/")) return Response.json([{ id: analysis, image_url: `${config.supabaseUrl}/storage/v1/object/sign/analysis-images/${path}?token=private` }]);
     if (url.includes("/storage/")) return new Response("original-image", { headers: { "Content-Type": "image/jpeg" } });
     if (url.includes("metadata.google.internal")) return Response.json({ access_token: "short-lived-cloud-token", expires_in: 3600 });
@@ -49,11 +50,12 @@ test("edits the stored original through the credited Cloud API using service ide
   }, validBody);
   assert.equal(result.status, 200);
   assert.equal((await result.json()).dataUri, "data:image/png;base64,ZWRpdGVk");
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 6);
 });
 test("a text-only model response cannot be reported as a generated image", async t => {
   const result = await run(t, async url => {
     if (url.includes("/auth/")) return Response.json({ id: user });
+    if (url.includes("/rpc/")) return Response.json(true);
     if (url.includes("/rest/")) return Response.json([{ image_url: `${config.supabaseUrl}/storage/v1/object/sign/analysis-images/${path}` }]);
     if (url.includes("/storage/")) return new Response("image", { headers: { "Content-Type": "image/jpeg" } });
     if (url.includes("metadata.google.internal")) return Response.json({ access_token: "token", expires_in: 3600 });

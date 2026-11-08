@@ -73,6 +73,7 @@ const Analyze = lazy(() => import("./pages/Analyze"));
 const Results = lazy(() => import("./pages/Results"));
 const Favorites = lazy(() => import("./pages/Favorites"));
 const Profile = lazy(() => import("./pages/Profile"));
+const Privacy = lazy(() => import("./pages/Privacy"));
 const Settings = lazy(() => import("./pages/Settings"));
 const History = lazy(() => import("./pages/History"));
 const Agent = lazy(() => import("./pages/Agent"));
@@ -214,6 +215,7 @@ const App = () => (
             <Route path="/results/:id" element={<Results />} />
             <Route path="/favorites" element={<Favorites />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/history" element={<History />} />
             <Route path="/agent" element={<AdminRoute><Agent /></AdminRoute>} />
