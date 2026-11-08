@@ -35,12 +35,12 @@ const modes: Array<{
   {
     id: "style",
     title: "Gemini style analysis",
-    description: "استخدمه لصياغة أسئلة وتحسين مدخلات تحليل الستايل داخل مسار Supabase الحالي.",
+    description: "استخدمه لصياغة أسئلة وتحسين مدخلات تحليل الستايل داخل مسار Lovable Cloud الحالي.",
     icon: Sparkles,
   },
   {
     id: "image",
-    title: "Replicate image planning",
+    title: "تنسيق وصف الصورة",
     description: "استخدمه لتحضير وصف الصورة والنتيجة المطلوبة قبل تشغيل توليد الصور.",
     icon: Wand2,
   },
@@ -63,13 +63,13 @@ const promptPresets = [
     title: "راجع OAuth بدون كسره",
     icon: ShieldCheck,
     prompt:
-      "راجع معي مشكلة Google OAuth بدون تعديل Auth أو Supabase config. المطلوب: خطوات فحص آمنة فقط، وما الذي لا يجب لمسه.",
+      "راجع معي مشكلة Google OAuth بدون تعديل Auth أو Lovable Cloud config. المطلوب: خطوات فحص آمنة فقط، وما الذي لا يجب لمسه.",
   },
   {
     title: "حضّر تحليل ستايل",
     icon: Sparkles,
     prompt:
-      "ساعدني أصيغ طلب تحليل ستايل مناسب لمسار Gemini الحالي في Glam Buddy. لا تضف أي API جديد ولا تغيّر Replicate.",
+      "ساعدني أصيغ طلب تحليل ستايل مناسب لمسار Gemini الحالي في Glam Buddy. لا تضف أي API جديد ولا تغيّر نموذج الصور.",
   },
 ];
 
@@ -77,7 +77,7 @@ const initialMessages: ChatMessage[] = [
   {
     role: "assistant",
     content:
-      "أهلا، دي واجهة Agent Center داخل Glam Buddy. الصفحة لا تتصل بـ Ollama ولا تفتح localhost. مسار الذكاء الحالي للتطبيق يظل Gemini/Lovable للتحليل و Replicate لتوليد الصور عبر Supabase Edge Functions.",
+      "أهلا، دي واجهة Agent Center داخل Glam Buddy. الصفحة لا تتصل بـ Ollama ولا تفتح localhost. إعداد مسار الذكاء في هذه النسخة للتطبيق يظل Gemini المباشر للتحليل و Google Cloud لتوليد الصور عبر Lovable Cloud Edge Functions.",
   },
 ];
 
@@ -86,12 +86,12 @@ const buildLocalReply = (input: string, mode: AgentMode) => {
   const sections: string[] = [];
 
   if (mode === "style") {
-    sections.push("مسار الستايل الحالي: Supabase Auth ثم Edge Function analyze-style ثم Gemini/Lovable للتحليل. لا نحتاج إضافة Ollama هنا.");
+    sections.push("مسار الستايل الحالي: Lovable Cloud Auth ثم Edge Function analyze-style ثم Gemini المباشر للتحليل. لا نحتاج إضافة Ollama هنا.");
     sections.push("أفضل خطوة: اكتب المناسبة، الجنس، ونوع النتيجة المطلوبة بوضوح، ثم ارفع الصورة من صفحة Analyze المعتادة.");
   }
 
   if (mode === "image") {
-    sections.push("مسار الصور الحالي يعتمد على Replicate من الخلفية فقط. مفتاح Replicate يجب أن يبقى secret داخل Supabase وليس في الواجهة.");
+    sections.push("مسار الصور الحالي يعتمد على Google Cloud من الخلفية فقط. مفتاح Google Cloud يجب أن يبقى secret داخل Lovable Cloud وليس في الواجهة.");
     sections.push("أفضل خطوة: حضر prompt واضح للصورة النهائية، واترك التنفيذ للـ Edge Function الموجودة.");
   }
 
@@ -101,7 +101,7 @@ const buildLocalReply = (input: string, mode: AgentMode) => {
   }
 
   if (normalized.includes("oauth") || normalized.includes("google") || normalized.includes("جوجل")) {
-    sections.push("بالنسبة لـ Google OAuth: لا تغيّر Auth.tsx أو إعدادات Supabase لمجرد اختبار صفحة الوكيل. افحص redirect URL و session timing فقط إذا ظهرت مشكلة دخول حقيقية.");
+    sections.push("بالنسبة لـ Google OAuth: لا تغيّر Auth.tsx أو إعدادات Lovable Cloud لمجرد اختبار صفحة الوكيل. افحص redirect URL و session timing فقط إذا ظهرت مشكلة دخول حقيقية.");
   }
 
   if (normalized.includes("ollama") || normalized.includes("qwen") || normalized.includes("كوين")) {
@@ -142,7 +142,7 @@ const Agent = () => {
   };
 
   const copyBridgePrompt = async () => {
-    const prompt = `Build a safe Glam Buddy agent bridge that uses the existing Supabase architecture. Do not change Google OAuth. Do not expose Replicate secrets in the frontend. Keep Gemini/Replicate as the production AI path. Add local Qwen only through an optional local bridge after explicit user approval.`;
+    const prompt = `Build a safe Glam Buddy agent bridge that uses the existing Lovable Cloud architecture. Do not change Google OAuth. Do not expose Google Cloud secrets in the frontend. Keep Gemini/Google Cloud as the production AI path. Add local Qwen only through an optional local bridge after explicit user approval.`;
 
     try {
       await navigator.clipboard.writeText(prompt);
@@ -162,12 +162,12 @@ const Agent = () => {
             <div className="space-y-3">
               <Badge variant="outline" className="w-fit gap-2 px-3 py-1">
                 <ShieldCheck className="h-4 w-4 text-primary" />
-                آمن: لا أوامر ولا localhost
+                مساعدة محلية دون تنفيذ أوامر
               </Badge>
               <div>
                 <h1 className="text-4xl md:text-5xl font-bold gradient-text">Agent Center</h1>
                 <p className="mt-3 max-w-2xl text-muted-foreground leading-relaxed">
-                  واجهة مساعدة داخل Glam Buddy لتنظيم التفكير حول Gemini و Replicate وتقارير الوكيل. الصفحة لا تستخدم Ollama مباشرة ولا تغير تسجيل الدخول.
+                  واجهة مساعدة داخل Glam Buddy لتنظيم التفكير حول Gemini و Google Cloud وتقارير الوكيل. الصفحة لا تستخدم Ollama مباشرة ولا تغير تسجيل الدخول.
                 </p>
               </div>
             </div>
@@ -176,13 +176,13 @@ const Agent = () => {
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Bot className="h-5 w-5 text-primary" />
-                  مسار الذكاء الحالي
+                  إعداد مسار الذكاء في هذه النسخة
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-muted-foreground leading-7">
-                <p>Supabase Auth يحافظ على الدخول.</p>
-                <p>Gemini/Lovable يحلل الستايل داخل Edge Function.</p>
-                <p>Replicate يولد الصور من الخلفية فقط.</p>
+                <p>Lovable Cloud Auth يحافظ على الدخول.</p>
+                <p>Gemini المباشر يحلل الستايل داخل Edge Function.</p>
+                <p>Google Cloud يولد الصور من الخلفية فقط.</p>
               </CardContent>
             </Card>
           </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import Navbar from "@/components/Layout/Navbar";
 import FashionChat from "@/components/FashionChat";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Link } from "react-router-dom";
+import { availabilityText } from "@/lib/quota-display";
 import { useQuota, notifyQuotaChanged } from "@/hooks/useQuota";
 
 const MAX_ANALYSIS_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -69,6 +72,8 @@ const prepareImageForAnalysis = async (file: File) => {
 
 const Analyze = () => {
   const navigate = useNavigate();
+  const requestLock = useRef(false);
+  const [consent, setConsent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState<string>("");
@@ -114,6 +119,7 @@ const Analyze = () => {
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!["image/jpeg","image/png","image/webp"].includes(file.type) || file.size>20*1024*1024) {toast.error("اختر JPG أو PNG أو WebP بحجم أقل من ٢٠ ميجابايت");return;}
       const preparedFile = await prepareImageForAnalysis(file);
       setImage(preparedFile);
       const reader = new FileReader();
@@ -125,11 +131,13 @@ const Analyze = () => {
   };
 
   const handleAnalyze = async () => {
+    if (requestLock.current || !quota || !quota.rendersLeft || !consent) return;
     if (!image || !gender) {
       toast.error("يرجى ملء جميع الحقول");
       return;
     }
 
+    requestLock.current=true;
     setLoading(true);
 
     try {
@@ -177,6 +185,7 @@ const Analyze = () => {
         "analyze-style",
         {
           body: {
+            requestId: crypto.randomUUID(),
             imageUrl: imageUrl,
             occasion: occasion.trim() || "general",
             gender,
@@ -200,23 +209,14 @@ const Analyze = () => {
       notifyQuotaChanged();
       const finalFunctionData = functionData;
 
-      // Update analysis with results and generated image
-      const { error: updateError } = await supabase
-        .from("style_analyses")
-        .update({ 
-          analysis_result: finalFunctionData,
-          generated_image_url: finalFunctionData.generated_image_url,
-        })
-        .eq("id", analysisRecord.id);
-
-      if (updateError) throw updateError;
-
       toast.success("تم التحليل بنجاح!");
       navigate(`/results/${analysisRecord.id}`);
     } catch (error: any) {
       console.error("Analysis error:", error);
       toast.error(error.message || "حدث خطأ في التحليل");
     } finally {
+      requestLock.current=false;
+      notifyQuotaChanged();
       setLoading(false);
     }
   };
@@ -301,14 +301,14 @@ const Analyze = () => {
                 <input
                   id="image-upload"
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   onChange={handleImageChange}
                   className="hidden"
                 />
                 <input
                   id="camera-capture"
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   capture="environment"
                   onChange={handleImageChange}
                   className="hidden"
@@ -365,9 +365,11 @@ const Analyze = () => {
                   placeholder="أخبرنا عن خططك: مقابلة عمل، تمشية، موعد رومانسي، جيم، سفر..." className="min-h-20" />
               </div>
 
+              <div className="flex items-start gap-3" dir="rtl"><Checkbox id="photo-consent" checked={consent} onCheckedChange={v=>setConsent(v===true)} disabled={loading}/><Label htmlFor="photo-consent" className="leading-6">أوافق على رفع صوري ومعالجتها لتنسيق الملابس عبر الجهات الموضحة في <Link className="underline text-primary" to="/privacy">سياسة الخصوصية</Link>.</Label></div>
+              {!quota && <p className="text-sm text-destructive">تعذر التحقق من الحصة أو جارٍ تحميلها؛ التوليد متوقف حتى التحقق.</p>}
               {quota && (
                 <p className={`text-sm text-center ${quota.rendersLeft ? "text-muted-foreground" : "text-destructive"}`}>
-                  {quota.rendersLeft ? `${quota.rendersLeft}/${quota.rendersLimit} صور متبقية اليوم` : "انتهت صورك لليوم (3 صور). يتجدد الرصيد تلقائياً خلال 24 ساعة."}
+                  {quota.rendersLeft ? `${quota.rendersLeft}/${quota.rendersLimit} صور متبقية اليوم` : availabilityText(quota.rendersAvailableAt)}
                 </p>
               )}
 
@@ -376,7 +378,7 @@ const Analyze = () => {
                 size="lg"
                 className="w-full"
                 onClick={handleAnalyze}
-                disabled={loading || preparingOutfit || !image || !gender || quota?.rendersLeft === 0}
+                disabled={loading || preparingOutfit || !image || !gender || !consent || !quota || quota.rendersLeft === 0}
               >
                 {loading ? (
                   <>

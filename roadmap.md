@@ -1,3 +1,10 @@
+# Current repair round (prepared only; no production migration or deployment)
+- [ ] Atomic render/chat reservations, idempotency, rolling availability, regression tests.
+- [ ] Direct configurable Gemini analysis/chat; trust boundaries and relay safeguards.
+- [ ] Honest copy, consent, privacy, owner-only deletion controls.
+- [ ] Backend/source safeguards, repository cleanup, operations document.
+- [ ] Synthetic verification and explicit activation blockers.
+
 # Outfit customization
 - [x] Add optional garment photo and written outfit request.
 - [x] Preserve preferences and original photo across retries; request a wholly different outfit and personalized colors.
