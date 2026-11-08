@@ -1,14 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
+import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { reserve, finish, RequestError } from "../_shared/quota.ts";
+import { geminiModel } from "../_shared/gemini.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildOutfitInstructions, outfitSignature, validateOutfitPreferences } from "./outfit-rules.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
-
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-const GEMINI_ANALYSIS_MODEL = "gemini-2.5-flash";
+const GEMINI_ANALYSIS_MODEL = geminiModel("GEMINI_ANALYSIS_MODEL");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -18,7 +16,7 @@ const GOOGLE_CLOUD_IMAGE_EDIT_URL = Deno.env.get("GOOGLE_CLOUD_IMAGE_EDIT_URL") 
 const MAX_INPUT_IMAGE_BYTES = 7 * 1024 * 1024;
 
 // Allowed values for validation
-const ALLOWED_OCCASIONS = ["casual", "work", "formal", "party", "wedding", "sport"];
+
 const ALLOWED_GENDERS = ["male", "female"];
 
 // UUID validation regex
@@ -32,13 +30,13 @@ const SYSTEM_PROMPT = `أنت "Style Nexus" - مستشار أزياء خبير �
 عند تحميل المستخدم لصورته، حللها وقدم توصيات شاملة حيث:
 - يتم تحليل ملامح الوجه، شكل الجسم، ولون البشرة
 - تقديم توصيات ملابس مخصصة بناءً على شكل الجسم ولون البشرة والمناسبة
-- للنساء: إضافة اقتراحات مكياج مناسب + تنسيق الحجاب (إذا كانت محجبة)
+- للنساء: إضافة اقتراحات مكياج مناسب؛ تنسيق الحجاب فقط عند طلب المستخدم الصريح، ولا تستنتج الدين أو المعتقد
 - للرجال: اقتراح تسريحة شعر (إعادة تصفيف الشعر الحالي، ليس قصة جديدة)
 
 [قواعد حاسمة:]
 1. كل مستخدم يحصل على توصيات ملابس فريدة بناءً على شكل جسمه ولون بشرته والمناسبة
 2. لا تستخدم اقتراحات عامة مثل "بولو وبنطلون تشينو" للجميع
-3. للنساء المحجبات: اقتراح لون ولفة الحجاب تتناسب مع الإطلالة
+3. تنسيق الحجاب عند طلب صريح فقط؛ خلاف ذلك أعد تنسيق_الحجاب كسلسلة فارغة
 4. للرجال: اقتراح تصفيف شعر (ليس قصة) يتناسب مع طول شعرهم الحالي
 5. لغة المخرجات تتطابق مع لغة المستخدم، باستثناء حقل image_generation_prompt يجب أن يكون بالإنجليزية فقط لأنه يُرسل مباشرة إلى نموذج توليد الصور
 
@@ -71,7 +69,7 @@ function isValidImageUrl(url: string): boolean {
       return false;
     }
     // Must be from our Supabase storage domain
-    if (!parsedUrl.hostname.includes(ALLOWED_DOMAIN.split(".")[0])) {
+    if (!(parsedUrl.hostname === ALLOWED_DOMAIN)) {
       return false;
     }
     // Must be from analysis-images bucket
@@ -84,7 +82,7 @@ function isValidImageUrl(url: string): boolean {
   }
 }
 
-const DAILY_RENDER_LIMIT = 3;
+
 
 function validateInput(data: any): { valid: boolean; error?: string } {
   // Check required fields exist
@@ -155,7 +153,7 @@ function buildOutfitPrompt(outfitDetails: any[]): string {
 async function verifyAnalysisOwnership(supabase: any, analysisId: string, userId: string) {
   const { data, error } = await supabase
     .from("style_analyses")
-    .select("id,user_id,analysis_result")
+    .select("id,user_id,image_url,occasion,gender,analysis_result")
     .eq("id", analysisId)
     .maybeSingle();
 
@@ -166,6 +164,7 @@ async function verifyAnalysisOwnership(supabase: any, analysisId: string, userId
 }
 
 async function saveGeneratedDataUri(supabase: any, effectiveUserId: string, dataUri: string) {
+  if (typeof dataUri !== "string" || dataUri.length > 24 * 1024 * 1024) throw new Error("Invalid generated image size");
   const match = dataUri.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) {
     throw new Error("Invalid generated image payload");
@@ -184,7 +183,7 @@ async function saveGeneratedDataUri(supabase: any, effectiveUserId: string, data
     .upload(fileName, new Blob([bytes], { type: contentType }), { contentType });
 
   if (uploadError) {
-    console.error("Upload error:", uploadError);
+    console.error("image_upload_failed");
     throw new Error("Failed to upload generated image to storage");
   }
 
@@ -193,7 +192,7 @@ async function saveGeneratedDataUri(supabase: any, effectiveUserId: string, data
     .createSignedUrl(fileName, 60 * 60 * 24 * 7);
 
   if (signedUrlError || !signedUrlData) {
-    console.error("Signed URL error:", signedUrlError);
+    console.error("image_sign_failed");
     throw new Error("Failed to create signed URL for generated image");
   }
 
@@ -206,10 +205,18 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let reservationId: string | null = null;
+  let owner: string | null = null;
+  let admin: ReturnType<typeof createClient> | null = null;
+  let outcome: "released" | "uncertain" = "released";
+  const deadline = Date.now() + 140000; // Below documented 150s request idle timeout; not a plan assumption.
+  const remainingSignal = () => AbortSignal.timeout(Math.max(1, deadline - Date.now()));
   try {
+    if (req.method !== "POST") throw new RequestError(405, "طريقة الطلب غير مدعومة.");
+    if (Number(req.headers.get("content-length")) > 12000) throw new RequestError(413,"الطلب كبير جداً.");
     // SECURITY: Verify authentication (explicit validation for Lovable Cloud ES256 compatibility)
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    if (!authHeader?.startsWith("Bearer ")) {
       console.error("Missing authorization header");
       return new Response(
         JSON.stringify({ error: "Missing authorization" }),
@@ -235,29 +242,32 @@ serve(async (req) => {
     }
 
     const authenticatedUserId = user.id;
-    console.log("Authenticated user:", authenticatedUserId);
+    owner = authenticatedUserId;
 
     // Parse request and create service role client for storage/database operations
-    const requestData = await req.json();
-    const { action, imageUrl, occasion, gender, userId, analysisId } = requestData;
+    const raw = await req.text();
+    if (new TextEncoder().encode(raw).length > 12000) throw new RequestError(413,"الطلب كبير جداً.");
+    const requestData = JSON.parse(raw);
+    const { action, userId, analysisId } = requestData;
     
     // Use authenticated user ID for all operations
     const effectiveUserId = authenticatedUserId;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    admin = supabase;
 
     // SECURITY: Validate all inputs
     const validation = validateInput(requestData);
     if (!validation.valid) {
       console.error("Input validation failed:", validation.error);
       return new Response(
-        JSON.stringify({ error: validation.error }),
+        JSON.stringify({ error: "بيانات الطلب غير صالحة." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     // SECURITY: Verify authenticated user matches requested userId
     if (userId && userId !== authenticatedUserId) {
-      console.error("Authorization failed: user mismatch", { authenticated: authenticatedUserId, requested: userId });
+      console.error("authorization_mismatch");
       return new Response(
         JSON.stringify({ error: "Unauthorized: cannot process data for another user" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -265,6 +275,7 @@ serve(async (req) => {
     }
 
     const ownedAnalysis = await verifyAnalysisOwnership(supabase, analysisId, effectiveUserId);
+    const {image_url: imageUrl, occasion, gender} = ownedAnalysis;
     const previousResult = ownedAnalysis.analysis_result || {};
     const regenerating = action === "regenerate";
     const preferences = regenerating ? (previousResult.outfit_preferences || {}) : {
@@ -281,7 +292,11 @@ serve(async (req) => {
     ] : [];
     const variation = regenerating ? Math.min(10000, Number(previousResult.outfit_variation || 0) + 1) : 0;
 
-    console.log("Starting analysis for:", { occasion, gender, analysisId, userId: effectiveUserId });
+    if (action && action !== "regenerate") throw new RequestError(400,"نوع الطلب غير صالح.");
+    if (!GEMINI_API_KEY) throw new RequestError(503,"خدمة تحليل الصور غير مهيأة حالياً.");
+    const reservation = await reserve(supabase,effectiveUserId,"render",requestData.requestId,{analysisId,action: action || "analyze",preferences},analysisId);
+    if (reservation.replay) return new Response(JSON.stringify(reservation.replay),{headers:{...corsHeaders,"Content-Type":"application/json"}});
+    reservationId = reservation.id;
 
     // Download image from private bucket using service role client
     // Extract the storage path from the URL
@@ -293,17 +308,8 @@ serve(async (req) => {
 
     // Ownership check: the storage path must belong to the authenticated caller
     const pathSegments = storagePath.split("/");
-    const ownerSegment = pathSegments[0] === "generated" ? pathSegments[1] : pathSegments[0];
-    if (ownerSegment !== effectiveUserId) {
-      console.error("Storage path ownership mismatch");
-      return new Response(
-        JSON.stringify({ error: "غير مصرح بالوصول إلى هذه الصورة." }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log("Downloading image from storage path:", storagePath);
-
+    const ownerSegment = pathSegments[0];
+    if (ownerSegment !== effectiveUserId || storagePath.includes("..") || /[\\?#\x00-\x1f]/.test(storagePath)) throw new RequestError(403,"غير مصرح بالوصول إلى الصورة.");
 
     const { data: imageData, error: downloadError } = await supabase.storage
       .from("analysis-images")
@@ -314,13 +320,7 @@ serve(async (req) => {
       throw new Error("Failed to fetch image from storage");
     }
 
-    if (imageData.size > MAX_INPUT_IMAGE_BYTES) {
-      console.error("Input image too large:", imageData.size);
-      return new Response(
-        JSON.stringify({ error: "الصورة كبيرة جداً. يرجى اختيار صورة أصغر أو إعادة المحاولة بعد ضغط الصورة." }),
-        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    if (!imageData.size || imageData.size > MAX_INPUT_IMAGE_BYTES || !["image/jpeg","image/png","image/webp"].includes(imageData.type)) throw new RequestError(413,"اختر صورة JPG أو PNG أو WebP بحجم لا يتجاوز ٧ ميجابايت.");
 
     const imageBuffer = await imageData.arrayBuffer();
     const uint8Array = new Uint8Array(imageBuffer);
@@ -335,21 +335,15 @@ serve(async (req) => {
     let referenceImagePart: { inline_data: { mime_type: string; data: string } } | null = null;
     if (preferences.outfitReferencePath) {
       const { data: reference, error: referenceError } = await supabase.storage.from("analysis-images").download(preferences.outfitReferencePath);
-      if (referenceError || !reference) return new Response(JSON.stringify({ error: "تعذر تحميل صورة الملابس." }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-      if (!reference.size || reference.size > MAX_INPUT_IMAGE_BYTES || !["image/jpeg", "image/png", "image/webp"].includes(reference.type)) {
-        return new Response(JSON.stringify({ error: "صورة الملابس يجب أن تكون JPG أو PNG أو WebP بحجم أقل من ٧ ميجابايت." }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      if (referenceError || !reference) throw new RequestError(400,"تعذر تحميل صورة الملابس.");
+      if (!reference.size || reference.size > MAX_INPUT_IMAGE_BYTES || !["image/jpeg","image/png","image/webp"].includes(reference.type)) throw new RequestError(413,"صورة الملابس غير صالحة أو كبيرة جداً.");
       const bytes = new Uint8Array(await reference.arrayBuffer());
       let binary = "";
       for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.slice(i, i + 8192));
       referenceImagePart = { inline_data: { mime_type: reference.type, data: btoa(binary) } };
     }
 
-    // Step 1: Get style analysis from Lovable AI
+    // Step 1: Direct Gemini analysis; no gateway fallback.
     const occasionLabels: Record<string, string> = {
       casual: "يومي",
       work: "عمل",
@@ -361,7 +355,7 @@ serve(async (req) => {
     };
 
     const genderLabel = gender === "male" ? "رجل" : "امرأة";
-    const hijabNote = gender === "female" ? " (لاحظ إذا كانت ترتدي حجاب وقدم توصيات مناسبة)" : "";
+    const hijabNote = " (لا تستنتج معتقداً أو ديانة. تنسيق الحجاب أو الاحتشام فقط عند طلب صريح في تفضيلات الملابس)";
     const userPrompt = `قم بتحليل هذه الصورة لـ ${genderLabel}${hijabNote} وقدم توصيات أزياء وتسريحات شعر مخصصة ومفصلة للمناسبة: ${occasionLabels[occasion] || occasion}. 
     
 تحليل دقيق مطلوب:
@@ -372,21 +366,13 @@ serve(async (req) => {
 
 أعد النتيجة بتنسيق JSON فقط.`;
 
-    if (!GEMINI_API_KEY) {
-      console.error("GEMINI_API_KEY is not configured");
-      return new Response(
-        JSON.stringify({ error: "خدمة تحليل الصور غير مهيأة حالياً." }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log("Calling Gemini API for style analysis...");
-
+    outcome = "uncertain"; // Dispatch can be billed even if the connection times out.
     const analysisResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_ANALYSIS_MODEL}:generateContent`,
       {
         method: "POST",
         headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
+        signal: remainingSignal(),
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
           contents: [{
@@ -403,28 +389,10 @@ serve(async (req) => {
     );
 
     if (!analysisResponse.ok) {
-      const errorText = await analysisResponse.text();
-      console.error("Gemini API error:", analysisResponse.status, errorText.slice(0, 500));
-
-      if (analysisResponse.status === 402) {
-        return new Response(
-          JSON.stringify({
-            error: "تعذر استخدام مفتاح Gemini (رصيد أو صلاحية). يرجى المراجعة ثم إعادة المحاولة.",
-          }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      if (analysisResponse.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "تم تجاوز حد الطلبات مؤقتًا. يرجى المحاولة بعد قليل." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      throw new Error("Failed to get style analysis");
+      console.error("analysis_upstream", analysisResponse.status);
+      if ([400,401,403,404,429].includes(analysisResponse.status)) outcome = "released";
+      throw new RequestError(analysisResponse.status === 429 ? 429 : 502,"تعذر تحليل الصورة لدى Gemini؛ راجع إعداد الخدمة أو حاول لاحقاً.");
     }
-
 
     const analysisData = await analysisResponse.json();
     const analysisText = (analysisData.candidates?.[0]?.content?.parts || []).map((p: { text?: string }) => p.text || "").join("");
@@ -440,18 +408,14 @@ serve(async (req) => {
       } else {
         throw new Error("No JSON found");
       }
-    } catch (parseError) {
-      console.error("JSON parse error:", parseError);
-      return new Response(JSON.stringify({ error: "تعذر الحصول على وصف ملابس صالح؛ لم يتم تغيير النتيجة السابقة." }), {
-        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    } catch {
+      outcome = "released"; // No image service was invoked; provider definitively returned an unusable analysis.
+      throw new RequestError(502,"تعذر الحصول على وصف صالح؛ احتفظنا بالنتيجة السابقة.");
     }
-
-    if (!Array.isArray(analysisResult?.توصيات_الملابس_والأطقم) || !analysisResult.توصيات_الملابس_والأطقم.length ||
+    if (!Array.isArray(analysisResult?.توصيات_الملابس_والأطقم) || !analysisResult.توصيات_الملابس_والأطقم.length || typeof analysisResult.image_generation_prompt !== "string" || analysisResult.image_generation_prompt.length > 12000 ||
       (regenerating && previousOutfits.some(outfit => outfitSignature(outfit) === outfitSignature(analysisResult)))) {
-      return new Response(JSON.stringify({ error: "لم يقترح النموذج طقماً جديداً؛ احتفظنا بالنتيجة السابقة." }), {
-        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      outcome = "released";
+      throw new RequestError(422,"لم يقترح النموذج طقماً صالحاً جديداً؛ احتفظنا بالنتيجة السابقة.");
     }
 
     // Step 2: Edit the original photo through the credited Google Cloud project.
@@ -476,7 +440,7 @@ serve(async (req) => {
     if (gender === "male") {
       stylePrompt = `${identityLock} ${outfitLock} Keep the existing hair exactly as in the input image; do not change hairstyle. ${negativeLock}`;
     } else {
-      const hasHijab = hijabDetails && hijabDetails.length > 0;
+      const hasHijab = /حجاب|hijab/i.test(preferences.outfitRequest || "") && hijabDetails && hijabDetails.length > 0;
       if (hasHijab) {
         stylePrompt = `${identityLock} ${outfitLock} Hijab edit only if needed: ${normalizePromptValue(hijabDetails)}. Preserve the original makeup and face unchanged. ${negativeLock}`;
       } else {
@@ -486,58 +450,21 @@ serve(async (req) => {
 
     // Do not log personal outfit preferences or reference details.
 
-    let imageGenerationError: string | null = null;
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { count: rendersUsed } = await supabase.from("usage_events").select("id", { count: "exact", head: true })
-      .eq("user_id", effectiveUserId).eq("kind", "render").gte("created_at", since);
-    if ((rendersUsed ?? 0) >= DAILY_RENDER_LIMIT) {
-      return new Response(JSON.stringify({ error: "استهلكت 3 صور اليوم. يتجدد رصيدك تلقائياً بعد 24 ساعة من أول صورة." }), {
-        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const {error: readyError} = await supabase.rpc("prepare_image_render", {p_user:effectiveUserId,p_id:reservationId});
+    if (readyError) { outcome="released"; throw new RequestError(503,"تعذر تجهيز حجز الصورة."); }
+    outcome="uncertain";
+    const imageResponse = await fetch(GOOGLE_CLOUD_IMAGE_EDIT_URL, {
+      method:"POST", headers:{Authorization:authHeader,"Content-Type":"application/json"},
+      body:JSON.stringify({analysisId,storagePath,prompt:stylePrompt}), signal:remainingSignal(),
+    });
+    if (!imageResponse.ok) {
+      if ([400,401,403,413,415,429].includes(imageResponse.status)) outcome="released";
+      console.error("image_upstream",imageResponse.status);
+      throw new RequestError(imageResponse.status===429?429:502,"تعذر تعديل الصورة. قد يبقى الطلب محجوزاً إذا كانت نتيجته غير مؤكدة.");
     }
-    try {
-      await verifyAnalysisOwnership(supabase, analysisId, effectiveUserId);
-      console.log("Calling Google Cloud image editor...");
-      const imageResponse = await fetch(GOOGLE_CLOUD_IMAGE_EDIT_URL, {
-        method: "POST",
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          analysisId,
-          storagePath,
-          prompt: stylePrompt,
-        }),
-        signal: AbortSignal.timeout(190000),
-      });
-
-      if (!imageResponse.ok) {
-        console.error("Google Cloud image error:", imageResponse.status);
-        if (imageResponse.status === 429) {
-          imageGenerationError = "تم تجاوز حد الطلبات لتوليد الصور. يرجى المحاولة بعد قليل.";
-        } else if (imageResponse.status === 413) {
-          imageGenerationError = "الصورة كبيرة جداً لتعديل الملابس. يرجى اختيار صورة أصغر.";
-        } else {
-          imageGenerationError = "تعذّر تعديل الصورة عبر Google Cloud. يرجى إعادة المحاولة.";
-        }
-      } else {
-        const imageData = await imageResponse.json();
-        const generatedDataUri = imageData?.dataUri || null;
-
-        if (!generatedDataUri) {
-          console.error("No image returned from Google Cloud");
-          imageGenerationError = "لم يتم إنشاء الصورة. يرجى المحاولة مرة أخرى.";
-        } else {
-          generatedImageUrl = await saveGeneratedDataUri(supabase, effectiveUserId, generatedDataUri);
-          const { error: usageError } = await supabase.from("usage_events").insert({ user_id: effectiveUserId, kind: "render" });
-          if (usageError) console.error("Usage record failed:", usageError.message);
-        }
-      }
-    } catch (imageError: any) {
-      console.error("Image generation error:", imageError);
-      imageGenerationError = "تعذّر تعديل الصورة عبر Google Cloud. يرجى إعادة المحاولة.";
-    }
+    const generated = await imageResponse.json();
+    if (!generated?.dataUri) throw new RequestError(502,"لم تصل صورة صالحة؛ لن نكرر الطلب تلقائياً.");
+    generatedImageUrl = await saveGeneratedDataUri(supabase,effectiveUserId,generated.dataUri);
 
     const result = {
       ...analysisResult,
@@ -545,29 +472,25 @@ serve(async (req) => {
       outfit_history: previousOutfits,
       outfit_variation: variation,
       generated_image_url: generatedImageUrl,
-      image_generation_error: imageGenerationError,
+      image_generation_error: null,
       image_generation_provider: "google-cloud",
       image_generation_model: "gemini-nano-banana-2.1",
-      image_generation_project: "project-25b363b8-50d5-4c00-ac5",
     };
 
 
-    console.log("Analysis complete");
+    const {error: saveError} = await supabase.from("style_analyses").update({analysis_result:result,generated_image_url:generatedImageUrl}).eq("id",analysisId).eq("user_id",effectiveUserId);
+    if (saveError) throw new RequestError(503,"تعذر حفظ النتيجة؛ لن نكرر عملية التوليد تلقائياً.");
+    await finish(supabase,effectiveUserId,reservationId,"completed",result);
+    reservationId=null;
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error: any) {
-    // Log detailed error for debugging (server-side only)
-    console.error("Error in analyze-style:", error);
-    
-    // Return generic error message to client - never expose internal details
-    return new Response(
-      JSON.stringify({ error: "حدث خطأ في التحليل. يرجى المحاولة مرة أخرى." }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+  } catch (error) {
+    if (admin && owner && reservationId) {
+      try { await finish(admin,owner,reservationId,outcome); } catch { console.error("reservation_finalize_failed"); }
+    }
+    console.error("analysis_failed",error instanceof Error ? error.name : "unknown");
+    return new Response(JSON.stringify({error:error instanceof RequestError ? error.message : "تعذر إتمام التحليل. لم نكرر التوليد تلقائياً."}),{status:error instanceof RequestError?error.status:500,headers:{...corsHeaders,"Content-Type":"application/json"}});
   }
 });
