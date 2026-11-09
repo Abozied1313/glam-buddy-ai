@@ -2,7 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { consumeQuota, refundQuota, RequestError, CHAT_LIMIT, EXHAUSTED_MESSAGE } from '../_shared/quota.ts';
 
-const CHAT_MODEL = 'google/gemini-2.5-flash';
+const CHAT_MODEL = 'google/gemini-3.8-flash'; // Confirmed in the Lovable AI Gateway catalog
 const GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
 const GENERIC_ERROR = 'تعذر الرد الآن. حاول لاحقاً.';
 const SYSTEM = `You are The Special Style fashion consultant. Reply in the user's language, usually Arabic, concise and friendly, using markdown. Text-only advice on outfits, colors, fabrics, fit and hairstyles. Use personalized varied colors, not default black/dark olive. Never infer religion. Hijab/modesty is only an explicitly requested styling preference. Never claim to generate images; direct image requests to ولّد إطلالتي on the analysis page.`;

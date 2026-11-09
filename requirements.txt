@@ -1,4 +1,0 @@
-google-genai
-google-genai
-requests
-python-dotenv
