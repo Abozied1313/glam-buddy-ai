@@ -32,11 +32,6 @@ const Home = () => {
     },
   ];
 
-  const stats = [
-    { number: "إطلالتك", label: "وصف الملابس أو صورتها المرجعية" },
-    { number: "ألوانك", label: "اقتراحات متنوعة بحسب طلبك" },
-    { number: "اختياراتك", label: "احفظ إطلالاتك المفضلة" },
-  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/50 flex flex-col">
@@ -95,15 +90,6 @@ const Home = () => {
               </Button>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-4 pt-12 max-w-md mx-auto">
-              {stats.map((stat, i) => (
-                <div key={i} className="text-center">
-                  <p className="text-lg md:text-xl font-bold text-primary">{stat.number}</p>
-                  <p className="text-xs md:text-sm text-muted-foreground mt-1">{stat.label}</p>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
 
