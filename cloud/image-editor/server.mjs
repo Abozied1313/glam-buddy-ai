@@ -59,11 +59,6 @@ export function createImageServer(config, fetcher = fetch) {
       activeUsers.add(userId);
       acquired = true;
 
-      const claim = await fetcher(`${config.supabaseUrl}/rest/v1/rpc/claim_image_render`, {
-        method: "POST", headers: { apikey: config.supabaseAnonKey, Authorization: authorization, "Content-Type": "application/json" },
-        body: JSON.stringify({ p_analysis: analysisId }), signal: AbortSignal.timeout(15000),
-      });
-      if (!claim.ok || await claim.json() !== true) return send(res, 403, { error: "Render reservation required" });
 
       const imageResponse = await supabase(`/storage/v1/object/authenticated/analysis-images/${storagePath.split("/").map(encodeURIComponent).join("/")}`, authorization);
       if (!imageResponse.ok) return send(res, 403, { error: "Image access denied" });

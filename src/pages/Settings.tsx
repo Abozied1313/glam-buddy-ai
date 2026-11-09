@@ -61,18 +61,9 @@ const Settings = () => {
   const handleDeleteAccount = async () => {
     try {
       setLoading(true);
-      // Delete user data from database first
-      const { error: dbError } = await supabase
-        .from("style_analyses")
-        .delete()
-        .eq("user_id", user.id);
-
-      if (dbError) throw dbError;
-
-      // Delete user account
-      const { error: authError } = await supabase.auth.admin.deleteUser(user.id);
-      if (authError) throw authError;
-
+      const { data, error } = await supabase.functions.invoke("delete-account", { body: {} });
+      if (error || !data?.success) throw new Error("لم يكتمل حذف الحساب. حاول مرة أخرى.");
+      await supabase.auth.signOut();
       toast.success("تم حذف حسابك بنجاح");
       navigate("/", { replace: true });
     } catch (error: any) {
@@ -176,6 +167,10 @@ const Settings = () => {
             <h2 className="text-2xl font-bold mb-6 text-red-600">منطقة الخطر</h2>
 
             <div className="space-y-4">
+              <Button variant="outline" className="w-full justify-start" onClick={() => navigate("/privacy")}>
+                <Shield className="w-5 h-5 ml-2" />
+                سياسة الخصوصية
+              </Button>
               <Button
                 variant="outline"
                 className="w-full justify-start text-red-600 hover:text-red-700"
@@ -193,7 +188,7 @@ const Settings = () => {
                 disabled={loading}
               >
                 <Trash2 className="w-5 h-5 ml-2" />
-                حذف الحساب نهائياً
+                حذف حسابي وبياناتي
               </Button>
             </div>
           </Card>
@@ -204,7 +199,7 @@ const Settings = () => {
               <Card className="max-w-sm w-full p-6">
                 <h3 className="text-xl font-bold mb-4">حذف الحساب</h3>
                 <p className="text-muted-foreground mb-6">
-                  هل أنت متأكد من رغبتك في حذف حسابك؟ سيتم حذف جميع بيانات التحليل الخاصة بك بشكل نهائي.
+                  هل أنت متأكد من رغبتك في حذف حسابك؟ سيتم حذف صورك وتحليلاتك ومحادثاتك وحسابك نهائياً ولا يمكن التراجع.
                 </p>
                 <div className="flex gap-4">
                   <Button

@@ -50,7 +50,7 @@ test("edits the stored original through the credited Cloud API using service ide
   }, validBody);
   assert.equal(result.status, 200);
   assert.equal((await result.json()).dataUri, "data:image/png;base64,ZWRpdGVk");
-  assert.equal(calls.length, 6);
+  assert.equal(calls.length, 5);
 });
 test("a text-only model response cannot be reported as a generated image", async t => {
   const result = await run(t, async url => {
