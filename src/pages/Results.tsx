@@ -161,7 +161,7 @@ const Results = () => {
       toast.success("تم إعادة التحليل بنجاح!");
     } catch (error: any) {
       console.error("Regenerate error:", error);
-      toast.error(error.message || "حدث خطأ في إعادة التحليل");
+      toast.error(error.message || "تعذر توليد طقم جديد. حاول مرة أخرى.");
     } finally {
       lock.current=false;
       notifyQuotaChanged();

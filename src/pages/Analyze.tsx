@@ -383,7 +383,7 @@ const Analyze = () => {
                 {loading ? (
                   <>
                     <Loader2 className="w-5 h-5 ml-2 animate-spin" />
-                    جاري التحليل...
+                    جاري التحليل... (قد يستغرق حتى دقيقتين)
                   </>
                 ) : (
                   <>
