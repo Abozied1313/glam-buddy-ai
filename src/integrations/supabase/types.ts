@@ -177,7 +177,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      consume_quota: {
+        Args: { _kind: string; _limit: number; _user_id: string }
+        Returns: string
+      }
       get_my_quota: { Args: never; Returns: Json }
+      refund_quota: {
+        Args: { _event_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "admin" | "user"
