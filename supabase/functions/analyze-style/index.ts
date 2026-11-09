@@ -23,7 +23,7 @@ const ALLOWED_GENDERS = ["male", "female"];
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Extract allowed domain for URL validation
-const ALLOWED_DOMAIN = SUPABASE_URL.replace("https://", "");
+const ALLOWED_DOMAIN = (() => { try { return new URL(SUPABASE_URL).hostname; } catch { return ""; } })();
 
 const SYSTEM_PROMPT = `أنت "Style Nexus" - مستشار أزياء خبير ونظام ذكاء اصطناعي للتنسيق الشخصي.
 
