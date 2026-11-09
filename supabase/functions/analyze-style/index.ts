@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
-import { reserve, finish, RequestError } from "../_shared/quota.ts";
+import { consumeQuota, refundQuota, RequestError, RENDER_LIMIT, EXHAUSTED_MESSAGE } from "../_shared/quota.ts";
 import { geminiModel } from "../_shared/gemini.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildOutfitInstructions, outfitSignature, validateOutfitPreferences } from "./outfit-rules.ts";
@@ -69,11 +69,11 @@ function isValidImageUrl(url: string): boolean {
       return false;
     }
     // Must be from our Supabase storage domain
-    if (!(parsedUrl.hostname === ALLOWED_DOMAIN)) {
+    if (!ALLOWED_DOMAIN || parsedUrl.hostname !== ALLOWED_DOMAIN) {
       return false;
     }
     // Must be from analysis-images bucket
-    if (!parsedUrl.pathname.includes("/storage/v1/object/") || !parsedUrl.pathname.includes("analysis-images")) {
+    if (!parsedUrl.pathname.startsWith("/storage/v1/object/") || !parsedUrl.pathname.includes("/analysis-images/")) {
       return false;
     }
     return true;
@@ -205,10 +205,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  let reservationId: string | null = null;
+  let usageEventId: string | null = null;
   let owner: string | null = null;
   let admin: ReturnType<typeof createClient> | null = null;
-  let outcome: "released" | "uncertain" = "released";
   const deadline = Date.now() + 140000; // Below documented 150s request idle timeout; not a plan assumption.
   const remainingSignal = () => AbortSignal.timeout(Math.max(1, deadline - Date.now()));
   try {
@@ -294,9 +293,6 @@ serve(async (req) => {
 
     if (action && action !== "regenerate") throw new RequestError(400,"نوع الطلب غير صالح.");
     if (!GEMINI_API_KEY) throw new RequestError(503,"خدمة تحليل الصور غير مهيأة حالياً.");
-    const reservation = await reserve(supabase,effectiveUserId,"render",requestData.requestId,{analysisId,action: action || "analyze",preferences},analysisId);
-    if (reservation.replay) return new Response(JSON.stringify(reservation.replay),{headers:{...corsHeaders,"Content-Type":"application/json"}});
-    reservationId = reservation.id;
 
     // Download image from private bucket using service role client
     // Extract the storage path from the URL
@@ -366,7 +362,6 @@ serve(async (req) => {
 
 أعد النتيجة بتنسيق JSON فقط.`;
 
-    outcome = "uncertain"; // Dispatch can be billed even if the connection times out.
     const analysisResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_ANALYSIS_MODEL}:generateContent`,
       {
@@ -390,7 +385,6 @@ serve(async (req) => {
 
     if (!analysisResponse.ok) {
       console.error("analysis_upstream", analysisResponse.status);
-      if ([400,401,403,404,429].includes(analysisResponse.status)) outcome = "released";
       throw new RequestError(analysisResponse.status === 429 ? 429 : 502,"تعذر تحليل الصورة لدى Gemini؛ راجع إعداد الخدمة أو حاول لاحقاً.");
     }
 
@@ -409,12 +403,10 @@ serve(async (req) => {
         throw new Error("No JSON found");
       }
     } catch {
-      outcome = "released"; // No image service was invoked; provider definitively returned an unusable analysis.
       throw new RequestError(502,"تعذر الحصول على وصف صالح؛ احتفظنا بالنتيجة السابقة.");
     }
     if (!Array.isArray(analysisResult?.توصيات_الملابس_والأطقم) || !analysisResult.توصيات_الملابس_والأطقم.length || typeof analysisResult.image_generation_prompt !== "string" || analysisResult.image_generation_prompt.length > 12000 ||
       (regenerating && previousOutfits.some(outfit => outfitSignature(outfit) === outfitSignature(analysisResult)))) {
-      outcome = "released";
       throw new RequestError(422,"لم يقترح النموذج طقماً صالحاً جديداً؛ احتفظنا بالنتيجة السابقة.");
     }
 
@@ -450,21 +442,26 @@ serve(async (req) => {
 
     // Do not log personal outfit preferences or reference details.
 
-    const {error: readyError} = await supabase.rpc("prepare_image_render", {p_user:effectiveUserId,p_id:reservationId});
-    if (readyError) { outcome="released"; throw new RequestError(503,"تعذر تجهيز حجز الصورة."); }
-    outcome="uncertain";
-    const imageResponse = await fetch(GOOGLE_CLOUD_IMAGE_EDIT_URL, {
-      method:"POST", headers:{Authorization:authHeader,"Content-Type":"application/json"},
-      body:JSON.stringify({analysisId,storagePath,prompt:stylePrompt}), signal:remainingSignal(),
-    });
-    if (!imageResponse.ok) {
-      if ([400,401,403,413,415,429].includes(imageResponse.status)) outcome="released";
-      console.error("image_upstream",imageResponse.status);
-      throw new RequestError(imageResponse.status===429?429:502,"تعذر تعديل الصورة. قد يبقى الطلب محجوزاً إذا كانت نتيجته غير مؤكدة.");
+    // Atomic quota consumption right before the paid image call (advisory-locked per user+kind).
+    usageEventId = await consumeQuota(supabase, effectiveUserId, "render", RENDER_LIMIT);
+    if (!usageEventId) throw new RequestError(429, EXHAUSTED_MESSAGE.render);
+    let imageResponse: Response;
+    try {
+      imageResponse = await fetch(GOOGLE_CLOUD_IMAGE_EDIT_URL, {
+        method:"POST", headers:{Authorization:authHeader,"Content-Type":"application/json"},
+        body:JSON.stringify({analysisId,storagePath,prompt:stylePrompt}), signal:AbortSignal.timeout(120000),
+      });
+    } catch {
+      throw new RequestError(504,"استغرق توليد الصورة وقتاً أطول من المتوقع. لم تُحتسب المحاولة، حاول مرة أخرى.");
     }
-    const generated = await imageResponse.json();
-    if (!generated?.dataUri) throw new RequestError(502,"لم تصل صورة صالحة؛ لن نكرر الطلب تلقائياً.");
+    if (!imageResponse.ok) {
+      console.error("image_upstream",imageResponse.status);
+      throw new RequestError(imageResponse.status===429?429:502,"تعذر تعديل الصورة. لم تُحتسب المحاولة، حاول مرة أخرى.");
+    }
+    const generated = await imageResponse.json().catch(() => null);
+    if (!generated?.dataUri) throw new RequestError(502,"لم تصل صورة صالحة. لم تُحتسب المحاولة، حاول مرة أخرى.");
     generatedImageUrl = await saveGeneratedDataUri(supabase,effectiveUserId,generated.dataUri);
+    usageEventId = null; // Image produced: the unit stays consumed.
 
     const result = {
       ...analysisResult,
@@ -473,23 +470,20 @@ serve(async (req) => {
       outfit_variation: variation,
       generated_image_url: generatedImageUrl,
       image_generation_error: null,
-      image_generation_provider: "google-cloud",
-      image_generation_model: "gemini-nano-banana-2.1",
     };
+    delete (result as Record<string, unknown>).image_generation_project;
+    delete (result as Record<string, unknown>).image_generation_model;
+    delete (result as Record<string, unknown>).image_generation_provider;
 
 
     const {error: saveError} = await supabase.from("style_analyses").update({analysis_result:result,generated_image_url:generatedImageUrl}).eq("id",analysisId).eq("user_id",effectiveUserId);
     if (saveError) throw new RequestError(503,"تعذر حفظ النتيجة؛ لن نكرر عملية التوليد تلقائياً.");
-    await finish(supabase,effectiveUserId,reservationId,"completed",result);
-    reservationId=null;
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    if (admin && owner && reservationId) {
-      try { await finish(admin,owner,reservationId,outcome); } catch { console.error("reservation_finalize_failed"); }
-    }
+    if (admin && owner && usageEventId) await refundQuota(admin, owner, usageEventId);
     console.error("analysis_failed",error instanceof Error ? error.name : "unknown");
     return new Response(JSON.stringify({error:error instanceof RequestError ? error.message : "تعذر إتمام التحليل. لم نكرر التوليد تلقائياً."}),{status:error instanceof RequestError?error.status:500,headers:{...corsHeaders,"Content-Type":"application/json"}});
   }
