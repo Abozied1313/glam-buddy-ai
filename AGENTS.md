@@ -3,3 +3,4 @@
 - Generate retries from the stored original photo and server-read outfit history, never from the generated image, to preserve identity and make variation explicit.
 - Keep Google Cloud as the existing image-editing relay; analyze garment references server-side with the existing Gemini analysis model and pass the resulting exact garment description to the unchanged relay contract.- Enforce daily quotas server-side by counting usage_events rows in a rolling 24h window, so resets are automatic and need no cron job.
 - Keep the fashion chat text-only in its own edge function, separate from analyze-style, so chat can never trigger image renders.
+- Fashion chat selects direct Gemini only when GEMINI_CHAT_API_KEY is configured; otherwise preserve the existing Gateway path, and never fallback after a direct-path failure, to isolate chat credentials and prevent hidden paid retries.

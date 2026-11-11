@@ -1,6 +1,19 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { consumeQuota, refundQuota, RequestError, CHAT_LIMIT, EXHAUSTED_MESSAGE } from '../_shared/quota.ts';
+import { deliverChat, openDirectChat, usesDirectChat } from './provider.ts';
+
+// Local deployed table contract; avoid an uninstantiated generic ReturnType erasing table types.
+type ChatDatabase = { public: {
+  Tables: { chat_messages: {
+    Row: { id: string; user_id: string; role: string; content: string; created_at: string };
+    Insert: { id?: string; user_id: string; role: string; content: string; created_at?: string };
+    Update: { role?: string; content?: string };
+    Relationships: [];
+  } };
+  Views: Record<string, never>;
+  Functions: Record<string, never>;
+} };
 
 const CHAT_MODEL = 'google/gemini-3.8-flash'; // Confirmed in the Lovable AI Gateway catalog
 const GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
@@ -11,12 +24,12 @@ const json = (body: unknown, status: number) => new Response(JSON.stringify(body
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   let eventId: string | null = null, owner: string | null = null;
-  let admin: ReturnType<typeof createClient> | null = null;
+  let admin: ReturnType<typeof createClient<ChatDatabase>> | null = null;
   try {
     if (req.method !== 'POST') return json({ error: 'طريقة الطلب غير مدعومة.' }, 405);
     const header = req.headers.get('Authorization');
     if (!header?.startsWith('Bearer ')) return json({ error: 'يجب تسجيل الدخول.' }, 401);
-    admin = createClient(Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
+    admin = createClient<ChatDatabase>(Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
     const { data: { user }, error: authError } = await admin.auth.getUser(header.slice(7));
     if (authError || !user) return json({ error: 'يجب تسجيل الدخول.' }, 401);
     owner = user.id;
@@ -26,7 +39,9 @@ Deno.serve(async req => {
     try { body = JSON.parse(raw); } catch { return json({ error: 'طلب غير صالح.' }, 400); }
     const message = typeof body.message === 'string' ? body.message.trim() : '';
     if (!message || message.length > 2000) return json({ error: 'الرسالة يجب أن تكون بين 1 و2000 حرف.' }, 400);
-    const key = Deno.env.get('LOVABLE_API_KEY');
+    const chatKey = Deno.env.get('GEMINI_CHAT_API_KEY');
+    const direct = usesDirectChat(chatKey);
+    const key = direct ? chatKey : Deno.env.get('LOVABLE_API_KEY');
     if (!key) return json({ error: 'خدمة المحادثة غير مهيأة حالياً.' }, 503);
 
     eventId = await consumeQuota(admin, owner, 'chat', CHAT_LIMIT);
@@ -39,7 +54,7 @@ Deno.serve(async req => {
       ...(history || []).reverse().map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
       { role: 'user', content: message },
     ];
-    const upstream = await fetch(GATEWAY_URL, {
+    const upstream = direct ? await openDirectChat(messages, key) : await fetch(GATEWAY_URL, {
       method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: CHAT_MODEL, messages, stream: true }), signal: AbortSignal.timeout(120000),
     });
@@ -55,38 +70,21 @@ Deno.serve(async req => {
 
     const client = admin, userId = owner, source = upstream.body, usedId = eventId;
     eventId = null;
-    const encoder = new TextEncoder(), decoder = new TextDecoder();
+    const encoder = new TextEncoder();
     let disconnected = false;
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        let full = '', buffer = '';
         const emit = (data: unknown) => { if (!disconnected) controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); };
         try {
-          const reader = source.getReader();
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            let nl: number;
-            while ((nl = buffer.indexOf('\n')) >= 0) {
-              const line = buffer.slice(0, nl).trim(); buffer = buffer.slice(nl + 1);
-              if (!line.startsWith('data:')) continue;
-              const payload = line.slice(5).trim();
-              if (payload === '[DONE]') continue;
-              try {
-                const delta = JSON.parse(payload)?.choices?.[0]?.delta?.content;
-                if (typeof delta === 'string' && delta) { full += delta; emit({ choices: [{ delta: { content: delta } }] }); }
-              } catch { /* partial JSON line: ignore */ }
-            }
-          }
-          if (!full.trim()) throw new Error('empty');
-          const { error } = await client.from('chat_messages').insert({ user_id: userId, role: 'assistant', content: full.slice(0, 8000) });
-          if (error) throw error;
-          if (!disconnected) controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        } catch {
-          if (full.trim()) await client.from('chat_messages').insert({ user_id: userId, role: 'assistant', content: full.slice(0, 7900) + '\n\n[توقف الرد قبل اكتماله]' });
-          else await refundQuota(client, userId, usedId);
-          emit({ error: 'توقف الرد قبل اكتماله.' });
+          await deliverChat(source, direct, {
+            emit,
+            save: async content => {
+              const { error } = await client.from('chat_messages').insert({ user_id: userId, role: 'assistant', content });
+              if (error) throw error;
+            },
+            refund: () => refundQuota(client, userId, usedId),
+            done: () => { if (!disconnected) controller.enqueue(encoder.encode('data: [DONE]\n\n')); },
+          });
         } finally {
           if (!disconnected) controller.close();
         }
