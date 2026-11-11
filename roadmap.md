@@ -1,7 +1,7 @@
 # Dedicated chat credential migration
 - [x] Prepare direct text-only Gemini streaming with the existing Gateway path retained only while the dedicated secret is absent.
 - [x] Validate synthetic stream, persistence, errors and refund tests (16 chat tests; 29 application tests total).
-- [ ] Activation: owner must securely configure GEMINI_CHAT_API_KEY for a free-tier Google project; production deployment is not authorized in this round.
+- [x] Activation authorized: GEMINI_CHAT_API_KEY presence verified; only fashion-chat deployed; one synthetic direct Gemini request returned HTTP 200 and STOP with text. Website and all other functions unchanged.
 
 # Current repair round (prepared only; no production migration or deployment)
 - [ ] Atomic render/chat reservations, idempotency, rolling availability, regression tests.
