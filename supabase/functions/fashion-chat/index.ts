@@ -3,6 +3,18 @@ import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { consumeQuota, refundQuota, RequestError, CHAT_LIMIT, EXHAUSTED_MESSAGE } from '../_shared/quota.ts';
 import { deliverChat, openDirectChat, usesDirectChat } from './provider.ts';
 
+// Local deployed table contract; avoid an uninstantiated generic ReturnType erasing table types.
+type ChatDatabase = { public: {
+  Tables: { chat_messages: {
+    Row: { id: string; user_id: string; role: string; content: string; created_at: string };
+    Insert: { id?: string; user_id: string; role: string; content: string; created_at?: string };
+    Update: { role?: string; content?: string };
+    Relationships: [];
+  } };
+  Views: Record<string, never>;
+  Functions: Record<string, never>;
+} };
+
 const CHAT_MODEL = 'google/gemini-3.8-flash'; // Confirmed in the Lovable AI Gateway catalog
 const GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
 const GENERIC_ERROR = 'تعذر الرد الآن. حاول لاحقاً.';
@@ -12,12 +24,12 @@ const json = (body: unknown, status: number) => new Response(JSON.stringify(body
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   let eventId: string | null = null, owner: string | null = null;
-  let admin: ReturnType<typeof createClient> | null = null;
+  let admin: ReturnType<typeof createClient<ChatDatabase>> | null = null;
   try {
     if (req.method !== 'POST') return json({ error: 'طريقة الطلب غير مدعومة.' }, 405);
     const header = req.headers.get('Authorization');
     if (!header?.startsWith('Bearer ')) return json({ error: 'يجب تسجيل الدخول.' }, 401);
-    admin = createClient(Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
+    admin = createClient<ChatDatabase>(Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
     const { data: { user }, error: authError } = await admin.auth.getUser(header.slice(7));
     if (authError || !user) return json({ error: 'يجب تسجيل الدخول.' }, 401);
     owner = user.id;
