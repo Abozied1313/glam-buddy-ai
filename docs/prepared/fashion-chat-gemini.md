@@ -1,4 +1,4 @@
-# Dedicated fashion chat Gemini migration (prepared, not deployed)
+# Dedicated fashion chat Gemini migration (chat function deployed)
 
 - Only fashion-chat changes. Image analysis, GEMINI_API_KEY, relay, UI, authentication and rolling quotas are unchanged.
 - With GEMINI_CHAT_API_KEY absent, the existing Lovable Gateway model/path remains selected and uses existing Lovable credits.
@@ -16,7 +16,7 @@
 
 ## Pending secure activation
 
-GEMINI_CHAT_API_KEY is absent in the project secret-name listing. Owner must add it in Project Settings → Secrets (never chat/source). Existing GEMINI_API_KEY is not read or modified by this chat migration. No credentials, billing, production functions or website have been changed by this preparation. Deploy fashion-chat only after owner approval; deployed chat remains unchanged until then. No SQL migration is needed.
+Owner authorized activation on 2026-11-11 after securely saving GEMINI_CHAT_API_KEY; its presence was verified by secret name only. Only fashion-chat was deployed successfully (source SHA-256 b75a331cefff3452fb63364b6facc86afb184372e210f4dae012f5ffe2b2f70b). One synthetic question through the server environment credential to the exact direct streaming model returned HTTP 200, text and STOP. This validates credential access and model streaming, not Google billing tier. Existing GEMINI_API_KEY, image paths, other functions, website publishing, billing and SQL remain unchanged. No SQL migration is needed.
 
 ## Validation
 
